@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -e
+
+. versions
+
+DISTRO=$(lsb_release -i -s)
+RELEASE=$(lsb_release -r -s)
+
+if [[ -z "${DISTRO}" || -z "${RELEASE}" ]] ; then
+  echo "Unable to determine distro"
+  exit 1
+fi
+
+
+if [[ "$(id -u)" != "0" ]] ; then
+  echo "Run this script as root"
+  exit 1
+fi
+
+if [[ "${DISTRO}" = "Ubuntu" ]] ; then
+  apt-get update
+  apt-get install -y libreadline-dev \
+    libncurses5-dev \
+    libpcre3-dev \
+    libssl-dev \
+    perl \
+    make \
+    build-essential \
+    curl \
+    unzip \
+    git-core
+else
+  echo "Distro ${DISTRO} not supported"
+  exit 1
+fi
+
+
+mkdir -p /src
+mkdir -p /opt
+
+LUAROCKS=/opt/openresty-rtmp/bin/luarocks
+
+if [[ ! -f /src/nginx-rtmp-module-${NGINX_RTMP_VERSION}.tar.gz ]] ; then
+  curl -R -L -o /src/nginx-rtmp-module-${NGINX_RTMP_VERSION}.tar.gz \
+    "https://github.com/arut/nginx-rtmp-module/archive/v${NGINX_RTMP_VERSION}.tar.gz"
+fi
+
+if [[ ! -f /src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}.tar.gz ]] ; then
+  curl -R -L -o /src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}.tar.gz \
+    "https://github.com/openresty/stream-lua-nginx-module/archive/${STREAM_LUA_NGINX_VERSION}.tar.gz"
+fi
+
+if [[ ! -f /src/openresty-${OPENRESTY_VERSION}.tar.gz ]] ; then
+  curl -R -L -o /src/openresty-${OPENRESTY_VERSION}.tar.gz \
+    "https://openresty.org/download/openresty-${OPENRESTY_VERSION}.tar.gz"
+fi
+
+if [[ ! -f /src/luarocks-${LUAROCKS_VERSION}.tar.gz ]] ; then
+  curl -R -L -o /src/luarocks-${LUAROCKS_VERSION}.tar.gz \
+    "https://luarocks.github.io/luarocks/releases/luarocks-${LUAROCKS_VERSION}.tar.gz"
+fi
+
+if [[ ! -f /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz ]] ; then
+  curl -R -L -o /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz \
+    "https://github.com/jprjr/sockexec/releases/download/${SOCKEXEC_VERSION}/sockexec-x86_64-linux-musl.tar.gz"
+fi
+
+if [[ ! -d /src/nginx-rtmp-module-${NGINX_RTMP_VERSION} ]] ; then
+  tar xf "/src/nginx-rtmp-module-${NGINX_RTMP_VERSION}.tar.gz" -C /src
+fi
+
+if [[ ! -d /src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION} ]] ; then
+  tar xf "/src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}.tar.gz" -C /src
+fi
+
+if [[ ! -d /src/openresty-${OPENRESTY_VERSION} ]] ; then
+  tar xf "/src/openresty-${OPENRESTY_VERSION}.tar.gz" -C /src
+fi
+
+if [[ ! -d /src/luarocks-${LUAROCKS_VERSION} ]] ; then
+  tar xf "/src/luarocks-${LUAROCKS_VERSION}.tar.gz" -C /src
+fi
+
+if [[ ! -d "/opt/openresty-${OPENRESTY_VERSION}-rtmp" ]] ; then
+  pushd /src/openresty-${OPENRESTY_VERSION}
+  ./configure \
+    --prefix=/opt/openresty-${OPENRESTY_VERSION}-rtmp \
+    --with-pcre-jit \
+    --with-ipv6 \
+    --with-stream \
+    --with-stream_ssl_module \
+    --add-module=/src/nginx-rtmp-module-${NGINX_RTMP_VERSION} \
+    --add-module=/src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}
+  make
+  make install
+  popd
+fi
+
+rm -f /opt/openresty-rtmp
+ln -s openresty-${OPENRESTY_VERSION}-rtmp /opt/openresty-rtmp
+
+if [[ ! -f /opt/openresty-${OPENRESTY_VERSION}-rtmp/bin/luarocks ]] ; then
+  pushd /src/luarocks-${LUAROCKS_VERSION}
+  ./configure \
+    --prefix=/opt/openresty-${OPENRESTY_VERSION}-rtmp \
+    --with-lua=/opt/openresty-${OPENRESTY_VERSION}-rtmp/luajit \
+    --lua-suffix=jit \
+    --with-lua-include=/opt/openresty-${OPENRESTY_VERSION}-rtmp/luajit/include/luajit-2.1
+  make build
+  make install
+  popd
+fi
+
+if [[ ! -d /opt/sockexec-${SOCKEXEC_VERSION} ]] ; then
+  mkdir /opt/sockexec-${SOCKEXEC_VERSION}
+  tar xf /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz -C /opt/sockexec-${SOCKEXEC_VERSION} -o
+fi
+
+rm -f /opt/sockexec
+ln -s sockexec-${SOCKEXEC_VERSION} /opt/sockexec
+
+if [[ ! -d /opt/htpasswd-auth-server ]] ; then
+  git clone https://github.com/jprjr/htpasswd-auth-server.git /opt/htpasswd-auth-server
+else
+  pushd /opt/htpasswd-auth-server
+  git pull origin master
+  popd
+fi
+
+if [[ ! -d /opt/multistreamer ]] ; then
+  git clone https://github.com/jprjr/multistreamer.git /opt/multistreamer
+else
+  pushd /opt/multistreamer
+  git fetch --tags origin
+  git checkout $(git describe --tags --abbrev=0)
+  popd
+fi
+
+pushd /opt/htpasswd-auth-server
+$LUAROCKS --tree=lua_modules install lecho $LUA_LECHO_VERSION
+$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION
+$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION
+$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION
+$LUAROCKS --tree=lua_modules install lbase64 $LUA_LBASE64_VERSION
+popd
+
+sed "s/@@LUA_CJSON_VERSION@@/$LUA_CJSON_VERSION/g" < lua-cjson.rockspec.template > lua-cjson-${LUA_CJSON_VERSION}-0.rockspec
+$LUAROCKS --tree=/opt/multistreamer/lua_modules install lua-cjson-${LUA_CJSON_VERSION}-0.rockspec
+
+pushd /opt/multistreamer
+$LUAROCKS --tree=lua_modules install lua-resty-exec $LUA_LUA_RESTY_EXEC_VERSION
+$LUAROCKS --tree=lua_modules install lua-resty-jit-uuid $LUA_LUA_RESTY_JIT_UUID_VERSION
+$LUAROCKS --tree=lua_modules install lua-resty-string $LUA_LUA_RESTY_STRING_VERSION
+$LUAROCKS --tree=lua_modules install lua-resty-http $LUA_LUA_RESTY_HTTP_VERSION
+$LUAROCKS --tree=lua_modules install lapis $LUA_LAPIS_VERSION
+$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION
+$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION
+$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION
+$LUAROCKS --tree=lua_modules install whereami $LUA_WHEREAMI_VERSION
+popd
+
+cat > /usr/local/bin/htpasswd-auth-server <<EOF
+#!/usr/bin/env bash
+
+exec /opt/htpasswd-auth-server/bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit "\$@"
+EOF
+
+cat > /usr/local/bin/multistreamer <<EOF
+#!/usr/bin/env bash
+
+exec /opt/multistreamer/bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luajit "\$@"
+EOF
+
+chmod +x /usr/local/bin/htpasswd-auth-server
+chmod +x /usr/local/bin/multistreamer
+rm -f /usr/local/bin/sockexec
+ln -s /opt/sockexec/bin/sockexec /usr/local/bin/sockexec
+
+useradd -m -d /var/lib/multistreamer \
+  -r -s /usr/sbin/nologin multistreamer || true
+
+cat > /etc/systemd/system/multistreamer.service <<EOF
+[Unit]
+Description=multistreamer
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/multistreamer -e production run
+User=multistreamer
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/sockexec.service <<EOF
+[Unit]
+Description=sockexec
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/sockexec -t0 /tmp/exec.sock
+User=multistreamer
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/htpasswd-auth-server.service <<EOF
+[Unit]
+Description=htpasswd-auth-server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/htpasswd-auth-server run
+User=multistreamer
+
+[Install]
+WantedBy=multi-user.target
+EOF

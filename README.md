@@ -30,13 +30,25 @@ When done, you'll have everything installed under `/opt`:
 * `/opt/htpasswd-auth-server`
 * `/opt/multistreamer`
 
-When setting up `htpasswd-auth-server`, instead of typing long commands like
-`./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit add`, you
-can simply call `htpasswd-auth-server add`, `htpasswd-auth-server run`, etc.
+When setting up `htpasswd-auth-server`, instead of typing long commands like:
 
-Similarly for multistreamer, instead of typing
-`./bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luajit -e prod initdb`, you
-can just type `multistreamer -e prod initdb`, `multistreamer -e prod run`, etc.
+* `./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit add`
+* `./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit run`
+
+you can simply call
+
+* `htpasswd-auth-server add`
+* `htpasswd-auth-server run`
+
+Similarly for multistreamer, instead of typing:
+
+* `./bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luajit -e prod initdb`
+* `./bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luajit -e prod run`
+
+you can just type
+
+* `multistreamer -e prod initdb`
+* `multistreamer -e prod run`
 
 Basically, the `-l /opt/openresty-rtmp/luajit/bin/luajit` part of the command isn't
 needed if you just type `multistreamer` instead of `./bin/multistreamer`, `htpasswd-auth-server`

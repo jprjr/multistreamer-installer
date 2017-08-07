@@ -58,3 +58,7 @@ git clone https://github.com/jprjr/multistreamer-installer
 cd multistreamer
 sudo ./install
 ```
+
+## License
+
+Released under an MIT license, see `LICENSE`

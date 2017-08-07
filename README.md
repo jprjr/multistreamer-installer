@@ -39,7 +39,8 @@ Similarly for multistreamer, instead of typing
 can just type `multistreamer -e prod initdb`, `multistreamer -e prod run`, etc.
 
 Basically, the `-l /opt/openresty-rtmp/luajit/bin/luajit` part of the command isn't
-needed if you just type `multistreamer` or `htpasswd-auth-server`
+needed if you just type `multistreamer` instead of `./bin/multistreamer`, `htpasswd-auth-server`
+instead of `./bin/htpasswd-auth-server`
 
 Once you've finished setting up htpasswd-auth, multistreamer, etc manually and you're
 sure everything is to your liking, enable and start the services:

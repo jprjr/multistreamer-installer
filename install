@@ -28,7 +28,8 @@ if [[ "${DISTRO}" = "Ubuntu" ]] ; then
     build-essential \
     curl \
     unzip \
-    git-core
+    git-core \
+    ffmpeg
 else
   echo "Distro ${DISTRO} not supported"
   exit 1

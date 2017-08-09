@@ -19,7 +19,7 @@ This will:
 
 Optionally, it can:
 
-1. Install Postgresql or redis and configure them
+1. Install Postgresql and redis and configure them
 2. Install nginx + haproxy as reverse proxies
 3. Setup dehydrated for automatic renewel of Let's Encrypt certificates
 4. Create a basic configuration for multistreamer

@@ -98,7 +98,9 @@ if [[ ! -d "/opt/openresty-${OPENRESTY_VERSION}-rtmp" ]] ; then
 fi
 
 rm -f /opt/openresty-rtmp
-ln -s openresty-${OPENRESTY_VERSION}-rtmp /opt/openresty-rtmp
+pushd /opt
+ln -s openresty-${OPENRESTY_VERSION}-rtmp openresty-rtmp
+popd
 
 if [[ ! -f /opt/openresty-${OPENRESTY_VERSION}-rtmp/bin/luarocks ]] ; then
   pushd /src/luarocks-${LUAROCKS_VERSION}

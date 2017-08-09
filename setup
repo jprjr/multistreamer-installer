@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-./install
-
-DISTRO=$(lsb_release -i -s)
-RELEASE=$(lsb_release -r -s)
-
-if [[ -z "${DISTRO}" || -z "${RELEASE}" ]] ; then
-  echo "Unable to determine distro"
-  exit 1
-fi
-
 if [[ "$(id -u)" != "0" ]] ; then
   echo "Run this script as root"
   exit 1
@@ -24,11 +14,46 @@ if [[ -z "${domain}" ]] ; then
   exit 1
 fi
 
-if [[ "${DISTRO}" = "Ubuntu" ]] ; then
-  systemctl disable apache2.service || true
-  systemctl stop apache2.service || true
+echo "WARNING: this script is meant for doing a from-scratch install"
+echo "of multistreamer to a brand-new server. If you want to just"
+echo "install Multistreamer without possibly breaking anything, run"
+echo "./install"
+echo ""
+echo "This WILL disable apache, if running, and setup nginx to serve"
+echo "$domain"
+echo "Please type Y to continue, anything else to quit"
 
-  apt-get update
+read input
+
+if [[ "${input}" != "Y" && "${input}" != "y" ]] ; then
+  exit
+fi
+
+
+DISTRO=$(lsb_release -i -s)
+RELEASE=$(lsb_release -r -s)
+
+if [[ -z "${DISTRO}" || -z "${RELEASE}" ]] ; then
+  echo "Unable to determine distro"
+  exit 1
+fi
+
+LOGFILE=$(mktemp)
+
+echo "Logging most commands to $LOGFILE..."
+echo "If this script doesn't print \"SUCCESS\", please inspect $LOGFILE for details"
+
+echo "Installing Multistreamer, Sockexec, and htpasswd-auth-server..."
+./install >$LOGFILE 2>&1
+
+
+if [[ "${DISTRO}" = "Ubuntu" ]] ; then
+  echo "Stopping/disabling apache2..."
+  systemctl disable apache2.service >/dev/null 2>&1 || true
+  systemctl stop apache2.service >/dev/null 2>&1 || true
+
+  echo "Updating apt cache, installing packages..."
+  apt-get update >$LOGFILE 2>&1
   apt-get install -y \
     nginx-light \
     postgresql \
@@ -36,23 +61,24 @@ if [[ "${DISTRO}" = "Ubuntu" ]] ; then
     git-core \
     curl \
     openssl \
-    haproxy
+    haproxy >$LOGFILE 2>&1
 else
   echo "Distro ${DISTRO} not supported"
   exit 1
 fi
 
+echo "Installing/updated dehydrated..."
 if [[ ! -e /opt/dehydrated ]] ; then
-  git clone https://github.com/lukas2511/dehydrated.git /opt/dehydrated
+  git clone https://github.com/lukas2511/dehydrated.git /opt/dehydrated >$LOGFILE 2>&1
 else
-  pushd /opt/dehydrated
-  git fetch --tags origin
-  popd
+  pushd /opt/dehydrated >/dev/null 2>&1
+  git fetch --tags origin >$LOGFILE 2>&1
+  popd >/dev/null 2>&1
 fi
 
-pushd /opt/dehydrated
-git checkout $(git describe --tags --abbrev=0)
-popd
+pushd /opt/dehydrated >/dev/null 2>&1
+git checkout $(git describe --tags --abbrev=0) >$LOGFILE 2>&1
+popd >/dev/null 2>&1
 
 mkdir -p /var/www/wellknown
 mkdir -p /etc/dehydrated
@@ -63,8 +89,9 @@ echo "$domain" > /etc/dehydrated/domains.txt
 chown -R www-data:www-data /var/www/wellknown
 chown -R www-data:www-data /etc/dehydrated
 
+echo "Registering with Let's Encrypt"
 if [[ ! -d /etc/dehydrated/accounts ]] ; then
-  sudo -u www-data /opt/dehydrated/dehydrated --register --accept-terms
+  sudo -u www-data /opt/dehydrated/dehydrated --register --accept-terms >$LOGFILE 2>&1
 fi
 
 if [[ ! -d /etc/dehydrated/certs ]] ; then
@@ -75,13 +102,14 @@ if [[ ! -d /etc/dehydrated/certs/$domain ]] ; then
   sudo -u www-data mkdir /etc/dehydrated/certs/$domain
 fi
 
+echo "Generating temporary self-signed certificate"
 if [[ ! -e /etc/dehydrated/certs/$domain/fullchain.pem ]] ; then
   # generate a temporary self-signed cert so nginx doesn't complain
   sudo -u www-data openssl req -new \
     -subj "/CN=$domain" \
     -sha256 -newkey rsa:2048 -days 365 -nodes -x509 \
     -keyout /etc/dehydrated/certs/$domain/privkey.pem \
-    -out /etc/dehydrated/certs/$domain/fullchain.pem
+    -out /etc/dehydrated/certs/$domain/fullchain.pem >$LOGFILE 2>&1
 fi
 
 cat /etc/dehydrated/certs/$domain/fullchain.pem \
@@ -90,6 +118,7 @@ cat /etc/dehydrated/certs/$domain/fullchain.pem \
 
 rm /etc/nginx/sites-available/default
 
+echo "Generating nginx configs..."
 cat <<EOF >/etc/nginx/sites-available/default
 server {
   listen [::]:80 default_server ipv6only=off;
@@ -150,10 +179,12 @@ server {
 EOF
 
 if [[ ! -e /etc/nginx/sites-enabled/$domain ]] ; then
+  echo "Restarting nginx..."
   ln -s ../sites-available/$domain /etc/nginx/sites-enabled/$domain
-  systemctl restart nginx.service
+  systemctl restart nginx.service >$LOGFILE 2>&1
 fi
 
+echo "Generating haproxy config..."
 cat <<EOF >/etc/haproxy/haproxy.cfg
 global
 	maxconn 2048
@@ -199,11 +230,13 @@ backend multistreamer-irc
 	server primary 127.0.0.1:6667
 EOF
 
-systemctl restart haproxy.service
+systemctl restart haproxy.service >$LOGFILE 2>&1
 
-sudo -u postgres psql -c "create user multistreamer with password 'multistreamer'" || true
-sudo -u postgres psql -c "create database multistreamer with owner multistreamer" || true
+echo "Creating multistreamer user and database..."
+sudo -u postgres psql -c "create user multistreamer with password 'multistreamer'" >/dev/null 2>&1 || true
+sudo -u postgres psql -c "create database multistreamer with owner multistreamer" >/dev/null 2>&1 || true
 
+echo "Generating multistreamer config file (/opt/multistreamer/config.lua..."
 if [[ ! -e /opt/multistreamer/config.lua ]] ; then
 session_secret=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
 
@@ -370,6 +403,7 @@ config({'production'}, {
 EOF
 fi
 
+echo "Generating htpasswd-auth-server config file (/opt/htpasswd-auth-server/etc/config.lua)..."
 if [[ ! -e /opt/htpasswd-auth-server/etc/config.lua ]] ; then
 cat <<EOF >/opt/htpasswd-auth-server/etc/config.lua
 local config = {
@@ -404,6 +438,7 @@ return config;
 EOF
 fi
 
+echo "Generating script to auto-renew Let's Encrypt certs..."
 cat <<EOF >/etc/cron.daily/update-letsencrypt-certs
 #!/usr/bin/env bash
 set -e
@@ -419,11 +454,17 @@ fi
 EOF
 
 chmod +x /etc/cron.daily/update-letsencrypt-certs
-/etc/cron.daily/update-letsencrypt-certs
+
+echo "Getting Let's Encrypt certificates..."
+/etc/cron.daily/update-letsencrypt-certs >$LOGFILE 2>&1
 
 if [[ ! -e /opt/htpasswd-auth-server/etc/htpasswd ]] ; then
+  echo "Creating first user for htpasswd-auth-server..."
   htpasswd-auth-server add
 fi
 
-systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service
-systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service
+echo "Enabling and starting sockexec, htpasswd-auth-server, multistreamer..."
+systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
+systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
+
+echo "SUCCESS"

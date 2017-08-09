@@ -25,12 +25,27 @@ Optionally, it can:
 4. Create a basic configuration for multistreamer
 5. Add your first user to htpasswd-auth-server
 
-There's no ability to pick and choose among the optional steps. The default `./install`
-script is what you should use if integrating multistreamer into an existing server.
+## Usage
 
-`./setup` is meant for doing a brand-new install on a brand-new server.
+Clone this repo somewhere, and either run `install` as root, or `setup` as root.
 
-## Things to do after running `./install`
+```
+git clone https://github.com/jprjr/multistreamer-installer
+cd multistreamer
+sudo ./install # or sudo ./setup
+```
+
+`install` *just* downloads + compiles openresty, multistreamer, sockexec, etc. It doesn't
+do any setup steps, doesn't automatically enable any services, no configuration of multistreamer,
+and so on. You can keep the repo around to act as an updater for Multistreamer - anytime you
+run `install`, it will checkout the latest tag from Multistreamer.
+
+`setup` runs `install`, then does additional steps assuming this box is brand-new, dedicated
+to multistreamer, and has a DNS hostname. It can be somewhat destructive - if your box is currently
+running Apache, it disables Apache, for example. So `setup` should only be run on something
+100% dedicated to running Multistreamer.
+
+## Steps to take if you only run `./install`
 
 When done, you'll have everything installed under `/opt`:
 
@@ -38,7 +53,8 @@ When done, you'll have everything installed under `/opt`:
 * `/opt/htpasswd-auth-server`
 * `/opt/multistreamer`
 
-When setting up `htpasswd-auth-server`, instead of typing long commands like:
+Additionally, convenience scripts are placed in /usr/local/bin, so instead
+of typing long commands like:
 
 * `./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit add`
 * `./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit run`
@@ -70,33 +86,27 @@ systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.ser
 systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service
 ```
 
-## Things to do after running the optional `./setup` script
+## Stesp to take if you run `./setup`
 
 Nothing, you'll have Let's Encrypt certificates installed, your first user created, etc.
 
-Check out Dehydrated, at /opt/dehydrated, and its config at `/etc/dehydrated`. That's
-where all the certificates, etc are.
+Be sure to check out the above notes about wher Multistreamer, sockexec, and htpasswd-auth-server
+are installed.
+
+Dehydrated is installed at /opt/dehydrated, and its config, certs, keys etc are at `/etc/dehydrated`. 
 
 A script is installed to `/etc/cron.daily/` to auto-renew Let's Encrypt certificates and
 reload nginx + haproxy.
 
-nginx is configured as a reverse proxy in front of Multistreamer's web interface,
-Haproxy is used to provide SSL encryption for Multistreamer's IRC interface.
+nginx is configured as a reverse proxy in front of Multistreamer's web interface. Be
+sure to look at `/etc/nginx/sites-available/(your domain)`, that's where the reverse
+proxy configuration is at.
+
+haproxy is configured to provide SSL for the IRC port, look at `/etc/haproxy/haproxy.cfg`
+for its configuration.
 
 To create more users, just run `htpasswd-auth-server add`, you'll be prompted for a username
 and password.
-
-## Usage
-
-Clone this repo somewhere, and run `install` as root:
-
-```
-git clone https://github.com/jprjr/multistreamer-installer
-cd multistreamer
-sudo ./install
-```
-
-If you want to do the optional setup, run `setup`
 
 ## License
 

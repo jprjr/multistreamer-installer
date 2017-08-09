@@ -463,6 +463,8 @@ if [[ ! -e /opt/htpasswd-auth-server/etc/htpasswd ]] ; then
   htpasswd-auth-server add
 fi
 
+multistreamer -e production initdb >$LOGFILE 2>&1
+
 echo "Enabling and starting sockexec, htpasswd-auth-server, multistreamer..."
 systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
 systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1

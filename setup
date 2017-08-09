@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+set -e
+
+./install
+
+DISTRO=$(lsb_release -i -s)
+RELEASE=$(lsb_release -r -s)
+
+if [[ -z "${DISTRO}" || -z "${RELEASE}" ]] ; then
+  echo "Unable to determine distro"
+  exit 1
+fi
+
+if [[ "$(id -u)" != "0" ]] ; then
+  echo "Run this script as root"
+  exit 1
+fi
+
+domain=$1
+
+if [[ -z "${domain}" ]] ; then
+  echo "Usage: $0 <domain-name>"
+  echo "  domain will be used for Let's Encrypt certificates"
+  exit 1
+fi
+
+if [[ "${DISTRO}" = "Ubuntu" ]] ; then
+  systemctl disable apache2.service || true
+  systemctl stop apache2.service || true
+
+  apt-get update
+  apt-get install -y \
+    nginx-light \
+    postgresql \
+    redis-server \
+    git-core \
+    curl \
+    openssl \
+    haproxy
+else
+  echo "Distro ${DISTRO} not supported"
+  exit 1
+fi
+
+if [[ ! -e /opt/dehydrated ]] ; then
+  git clone https://github.com/lukas2511/dehydrated.git /opt/dehydrated
+else
+  pushd /opt/dehydrated
+  git fetch --tags origin
+  popd
+fi
+
+pushd /opt/dehydrated
+git checkout $(git describe --tags --abbrev=0)
+popd
+
+mkdir -p /var/www/wellknown
+mkdir -p /etc/dehydrated
+
+echo "WELLKNOWN=/var/www/wellknown" > /etc/dehydrated/config
+echo "$domain" > /etc/dehydrated/domains.txt
+
+chown -R www-data:www-data /var/www/wellknown
+chown -R www-data:www-data /etc/dehydrated
+
+if [[ ! -d /etc/dehydrated/accounts ]] ; then
+  sudo -u www-data /opt/dehydrated/dehydrated --register --accept-terms
+fi
+
+if [[ ! -d /etc/dehydrated/certs ]] ; then
+  sudo -u www-data mkdir /etc/dehydrated/certs
+fi
+
+if [[ ! -d /etc/dehydrated/certs/$domain ]] ; then
+  sudo -u www-data mkdir /etc/dehydrated/certs/$domain
+fi
+
+if [[ ! -e /etc/dehydrated/certs/$domain/fullchain.pem ]] ; then
+  # generate a temporary self-signed cert so nginx doesn't complain
+  sudo -u www-data openssl req -new \
+    -subj "/CN=$domain" \
+    -sha256 -newkey rsa:2048 -days 365 -nodes -x509 \
+    -keyout /etc/dehydrated/certs/$domain/privkey.pem \
+    -out /etc/dehydrated/certs/$domain/fullchain.pem
+fi
+
+cat /etc/dehydrated/certs/$domain/fullchain.pem \
+    /etc/dehydrated/certs/$domain/privkey.pem > \
+    /etc/dehydrated/certs/$domain/combined.pem
+
+rm /etc/nginx/sites-available/default
+
+cat <<EOF >/etc/nginx/sites-available/default
+server {
+  listen [::]:80 default_server ipv6only=off;
+
+  server_name _;
+  return 444;
+}
+
+server {
+  listen [::]:443 ssl default_server ipv6only=off;
+
+  ssl_certificate     /etc/dehydrated/certs/$domain/fullchain.pem;
+  ssl_certificate_key /etc/dehydrated/certs/$domain/privkey.pem;
+  
+  server_name _;
+  return 444;
+}
+EOF
+
+cat <<EOF >/etc/nginx/sites-available/$domain
+server {
+  listen [::]:80;
+
+  server_name $domain;
+
+  location /.well-known/acme-challenge {
+    alias /var/www/wellknown;
+  }
+
+  location / {
+    return 301 https://\$host\$request_uri;
+  }
+}
+
+server {
+  listen [::]:443;
+
+  ssl_certificate     /etc/dehydrated/certs/$domain/fullchain.pem;
+  ssl_certificate_key /etc/dehydrated/certs/$domain/privkey.pem;
+
+  server_name $domain;
+  location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_request_buffering off;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+  }
+
+  location /ws {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_request_buffering off;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}
+EOF
+
+if [[ ! -e /etc/nginx/sites-enabled/$domain ]] ; then
+  ln -s ../sites-available/$domain /etc/nginx/sites-enabled/$domain
+  systemctl restart nginx.service
+fi
+
+cat <<EOF >/etc/haproxy/haproxy.cfg
+global
+	maxconn 2048
+	tune.ssl.default-dh-param 2048
+	log /dev/log	local0
+	log /dev/log	local1 notice
+	chroot /var/lib/haproxy
+	stats socket /run/haproxy/admin.sock mode 660 level admin
+	stats timeout 30s
+	user haproxy
+	group haproxy
+	daemon
+
+	# Default ciphers to use on SSL-enabled listening sockets.
+	# For more information, see ciphers(1SSL). This list is from:
+	#  https://hynek.me/articles/hardening-your-web-servers-ssl-ciphers/
+	ssl-default-bind-ciphers ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:!aNULL:!MD5:!DSS
+	ssl-default-bind-options no-sslv3
+
+defaults
+	log	global
+	mode	http
+	option	httplog
+	option	dontlognull
+        timeout connect 5000
+        timeout client  50000
+        timeout server  50000
+	errorfile 400 /etc/haproxy/errors/400.http
+	errorfile 403 /etc/haproxy/errors/403.http
+	errorfile 408 /etc/haproxy/errors/408.http
+	errorfile 500 /etc/haproxy/errors/500.http
+	errorfile 502 /etc/haproxy/errors/502.http
+	errorfile 503 /etc/haproxy/errors/503.http
+	errorfile 504 /etc/haproxy/errors/504.http
+
+frontend multistreamer-irc-tls
+	bind :::6697 v4v6 ssl crt /etc/dehydrated/certs/$domain/combined.pem
+	mode tcp
+        option tcplog
+	default_backend multistreamer-irc
+
+backend multistreamer-irc
+	server primary 127.0.0.1:6667
+EOF
+
+systemctl restart haproxy.service
+
+sudo -u postgres psql -c "create user multistreamer with password 'multistreamer'" || true
+sudo -u postgres psql -c "create database multistreamer with owner multistreamer" || true
+
+if [[ ! -e /opt/multistreamer/config.lua ]] ; then
+session_secret=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
+
+cat <<EOF > /opt/multistreamer/config.lua
+local config = require('lapis.config').config
+
+config({'production'}, {
+  -- name of the cookie used to store session data
+  session_name = 'multistreamer',
+
+  -- key for encrypting session data
+  secret = '$session_secret',
+
+  -- whether to log queries and requests
+  logging = {
+      queries = false,
+      requests = false
+  },
+
+  -- if deploying somewhere other than the root of a domain,
+  -- set this to your prefix (ie, '/multistreamer')
+  http_prefix = '',
+
+  -- set an rtmp prefix
+  -- note: this can only be a single string,
+  -- no slashes etc
+  -- defaults to 'multistreamer' if unset
+  rtmp_prefix = 'multistreamer',
+
+  -- path to your nginx+lua+rtmp binary
+  nginx = '/opt/openresty-rtmp/nginx/sbin/nginx',
+
+  -- path to psql
+  psql = '/usr/bin/psql',
+
+  -- path to ffmpeg
+  ffmpeg = '/usr/bin/ffmpeg',
+
+  -- set your logging level
+  log_level = 'error',
+
+  -- setup your external urls (without prefixes)
+  public_http_url = 'https://$domain',
+  public_rtmp_url = 'rtmp://$domain:1935',
+
+  -- setup your private (loopback) urls (without prefixes)
+  private_http_url = 'http://127.0.0.1:8081',
+  private_rtmp_url = 'rtmp://127.0.0.1:1935',
+
+  -- setup your public IRC hostname, for the web
+  -- interface
+  public_irc_hostname = '$domain',
+  -- setup your public IRC port, to report in the
+  -- web interface
+  public_irc_port = '6697',
+  -- set to true if you've setup an SSL terminator in front
+  -- of multistreamer
+  public_irc_ssl = true,
+  
+
+  -- configure streaming networks/services
+  -- you'll need to register a new app with each
+  -- service and insert keys/ids in here
+
+  -- 'rtmp' just stores RTMP urls and has no config,
+  networks = {
+    -- mixer = {
+    --   client_id = 'client_id',
+    --   client_secret = 'client_secret',
+    --   ingest_server = 'rtmp://somewhere',
+    -- },
+    -- twitch = {
+    --   client_id = 'client_id',
+    --   client_secret = 'client_secret',
+    --   ingest_server = 'rtmp://somewhere', -- see https://bashtech.net/twitch/ingest.php
+                                             -- for a list of endpoints
+    -- },
+    -- facebook = {
+    --   app_id = 'app_id',
+    --   app_secret = 'app_secret',
+    -- },
+    -- youtube = {
+    --   client_id = 'client_id',
+    --   client_secret = 'client_secret',
+    --   country = 'us', -- 2-character country code, used for listing available categories
+    -- },
+    rtmp = true,
+  },
+
+  -- postgres connection settings
+  postgres = {
+    host = '127.0.0.1',
+    user = 'multistreamer',
+    password = 'multistreamer',
+    database = 'multistreamer'
+  },
+
+  -- nginx http "listen" directive, see
+  -- http://nginx.org/en/docs/http/ngx_http_core_module.html#listen
+  http_listen = '127.0.0.1:8081',
+
+  -- nginx rtmp "listen" directive, see
+  -- https://github.com/arut/nginx-rtmp-module/wiki/Directives#listen
+  -- default: listen on all ipv6+ipv4 addresses
+  rtmp_listen = '[::]:1935 ipv6only=off',
+
+  -- nginx irc "listen" directive, see
+  -- https://nginx.org/en/docs/stream/ngx_stream_core_module.html#listen
+  -- default: listen on all ipv6+ipv4 addresses
+  irc_listen = '127.0.0.1:6667',
+
+  -- set the IRC hostname reported by the server
+  irc_hostname = '$domain',
+
+  -- should users be automatically brought into chat rooms when
+  -- their streams go live? (default false)
+  -- this is handy for clients like Adium, Pidgin, etc that don't
+  -- have a great IRC interface
+  irc_force_join = true,
+
+  -- number of worker processes
+  worker_processes = 1,
+
+  -- http auth endpoint
+  -- multistreamer will make an HTTP request with the 'Authorization'
+  -- header to this URL when a user logs in
+  -- see http://nginx.org/en/docs/http/ngx_http_auth_request_module.html
+  -- see https://github.com/jprjr/ldap-auth-server for an LDAP implementation
+  auth_endpoint = 'http://127.0.0.1:8080/',
+
+  -- redis host
+  redis_host = '127.0.0.1:6379',
+
+  -- prefix for redis keys
+  redis_prefix = 'multistreamer/',
+
+  -- path to trusted ssl certificate store
+  ssl_trusted_certificate = '/etc/ssl/certs/ca-certificates.crt',
+
+  -- dns resolver
+  dns_resolver = '8.8.8.8 ipv6=off',
+
+  -- maximum ssl verify depth
+  ssl_verify_depth = 5,
+
+  -- sizes for shared dictionaries (see https://github.com/openresty/lua-nginx-module#lua_shared_dict)
+  lua_shared_dict_streams_size = '10m',
+  lua_shared_dict_writers_size = '10m',
+
+  -- specify the run directory to hold temp files etc,
+  -- defaults to $HOME/.multistreamer if not set
+  -- work_dir = '/path/to/some/folder',
+
+  -- set the path to sockexec's socket
+  -- see https://github.com/jprjr/sockexec for installation details
+  sockexec_path = '/tmp/exec.sock',
+
+  -- allow/disallow transcoding (default: true)
+  allow_transcoding = false,
+
+  -- allow/disallow creating pullers (default: true)
+  allow_custom_puller = false,
+})
+EOF
+fi
+
+if [[ ! -e /opt/htpasswd-auth-server/etc/config.lua ]] ; then
+cat <<EOF >/opt/htpasswd-auth-server/etc/config.lua
+local config = {
+    -- set a path to nginx
+    -- this is required
+    nginx = '/opt/openresty-rtmp/nginx/sbin/nginx';
+
+    -- set the log level
+    -- default: error
+    -- valid values: debug, info, notice, warn, error, crit, alert, emerg
+    log_level = "error";
+
+    -- set a custom working directory
+    -- optional, defaults to $HOME/.htpasswd-auth-server
+    -- work_dir = "/home/user/something";
+
+    -- set listen interface+port or unix path
+    -- optional, defaults to 127.0.0.1:8080
+    -- see http://nginx.org/en/docs/http/ngx_http_core_module.html#listen
+    listen = "127.0.0.1:8080";
+
+    -- set the number of worker processes
+    -- optional, defaults to 1
+    worker_processes = 1;
+
+    -- set the realm
+    -- optional, defaults to 'default'
+    realm = 'default';
+}
+
+return config;
+EOF
+fi
+
+cat <<EOF >/etc/cron.daily/update-letsencrypt-certs
+#!/usr/bin/env bash
+set -e
+
+sudo -u www-data /opt/dehydrated/dehydrated -c >/dev/null 2>&1
+
+if [[ /etc/dehydrated/certs/$domain/fullchain.pem -nt /etc/dehydrated/certs/$domain/combined.pem ]] ; then
+  cat /etc/dehydrated/certs/$domain/fullchain.pem \
+      /etc/dehydrated/certs/$domain/privkey.pem > \
+      /etc/dehydrated/certs/$domain/combined.pem
+  systemctl reload nginx.service haproxy.service
+fi
+EOF
+
+chmod +x /etc/cron.daily/update-letsencrypt-certs
+/etc/cron.daily/update-letsencrypt-certs
+
+if [[ ! -e /opt/htpasswd-auth-server/etc/htpasswd ]] ; then
+  htpasswd-auth-server add
+fi
+
+systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service
+systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service

@@ -1,118 +1,157 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -e
 
-. versions
-
-DISTRO=$(lsb_release -i -s)
-RELEASE=$(lsb_release -r -s)
-
-if [[ -z "${DISTRO}" || -z "${RELEASE}" ]] ; then
-  echo "Unable to determine distro"
+if test "$(id -u)" != "0" ; then
+  printf "Run this script as root\n"
   exit 1
 fi
 
+case "$0" in
+  /*) my_dir=$(dirname "$0") ;;
+  *) my_dir=$(dirname "$(pwd)/${0#./}") ;;
+esac
 
-if [[ "$(id -u)" != "0" ]] ; then
-  echo "Run this script as root"
+. ${my_dir}/versions
+
+if test -f /etc/os-release ; then
+  DISTRO=$(. /etc/os-release && printf "${ID}" )
+  RELEASE=$(. /etc/os-release && printf "${VERSION_ID}" )
+elif test -f /etc/fedora-release ; then
+  DISTRO="fedora"
+  RELEASE="Unknown"
+elif test -f /etc/debian_version ; then
+  DISTRO="debian"
+  RELEASE="Unknown"
+elif test -f /etc/redhat-release ; then
+  DISTRO="centos"
+  RELEASE="Unknown"
+elif test -f /etc/alpine-release ; then
+  DISTRO="alpine"
+  RELEASE="Unknown"
+fi
+
+if test -z "${DISTRO}" ; then
+  printf "Unable to determine distro\n"
   exit 1
 fi
 
-if [[ "${DISTRO}" = "Ubuntu" ]] ; then
-  apt-get update
-  apt-get install -y libreadline-dev \
-    libncurses5-dev \
-    libpcre3-dev \
-    libssl-dev \
-    perl \
-    make \
-    build-essential \
-    curl \
-    unzip \
-    git-core \
-    ffmpeg
+if ! test command -v pushd 1>/dev/null 2>&1 ; then
+pushd() {
+    if test -z "PUSHD_STACK" ; then
+        PUSHD_STACK="$PWD"
+    else
+        PUSHD_STACK="$PUSHD_STACK;$PWD"
+    fi
+    cd "$1"
+}
+popd() {
+    if test -n ${IFS+x} ; then
+      OLDIFS="${IFS}"
+    fi
+    IFS=";"
+    NEW_PUSHD_STACK=""
+    NEW_DIR=""
+    for dir in ${PUSHD_STACK} ; do
+      if test -z "${NEW_DIR}" ; then
+        NEW_DIR="${dir}"
+      else
+        if test -z "${NEW_PUSHD_STACK}" ; then
+          NEW_PUSHD_STACK="${NEW_DIR}"
+        else
+          NEW_PUSHD_STACK="${NEW_PUSHD_STACK};${NEW_DIR}"
+        fi
+        NEW_DIR="${dir}"
+      fi
+    done
+    if test -n ${OLDIFS+x} ; then
+      IFS="${OLDIFS}"
+    else
+      unset IFS
+    fi
+    cd "${NEW_DIR}"
+    PUSHD_STACK="${NEW_PUSHD_STACK}"
+    unset NEW_PUSHD_STACK
+    unset NEW_DIR
+}
+fi
+
+if test "${DISTRO}" = "ubuntu"; then
+  UPDATE_CMD="apt-get update"
+  INSTALL_CMD="apt-get install -y"
+  PACKAGE_LIST="git ffmpeg libyaml-dev"
+
+elif test "${DISTRO}" = "debian" ; then
+  UPDATE_CMD="apt-get update"
+  INSTALL_CMD="apt-get install -y"
+  PACKAGE_LIST="git ffmpeg libyaml-dev"
+
+elif test "${DISTRO}" = "centos" -o "${DISTRO}" = "rhel" ; then
+  INSTALL_CMD="yum install -y"
+  PACKAGE_LIST="git ffmpeg yaml-devel"
+
+elif test "${DISTRO}" = "fedora" ; then
+  INSTALL_CMD="dnf install -y"
+  PACKAGE_LIST="git ffmpeg yaml-devel"
+
+elif test "${DISTRO}" = "alpine" ; then
+  UPDATE_CMD="apk update"
+  INSTALL_CMD="apk add"
+  PACKAGE_LIST="git ffmpeg yaml-dev"
+
+elif test "${DISTRO}" = "opensuse" ; then
+  INSTALL_CMD="zypper install -y"
+  PACKAGE_LIST="git ffmpeg yaml-devel"
+
+elif test "${DISTRO}" = "arch" ; then
+  UPDATE_CMD="pacman -Sy"
+  INSTALL_CMD="pacman -S --needed --noconfirm"
+  PACKAGE_LIST="git ffmpeg libyaml-devel"
+
+fi
+
+if test -z "${INSTALL_CMD}" ; then
+  printf "${DISTRO} is not supported - please open an issue\n"
+  exit 1
+fi
+
+if test -n "${UPDATE_CMD}" ; then
+  ${UPDATE_CMD}
+fi
+${INSTALL_CMD} ${PACKAGE_LIST}
+
+if ! test -d "/src" ; then
+  mkdir "/src"
+fi
+
+if ! test -d "/opt" ; then
+  mkdir "/opt"
+fi
+
+if ! test -d /opt/setup-openresty ; then
+  git clone https://github.com/jprjr/setup-openresty.git /opt/setup-openresty
 else
-  echo "Distro ${DISTRO} not supported"
-  exit 1
+  pushd /opt/setup-openresty
+  git pull origin master
+  popd
 fi
 
-
-mkdir -p /src
-mkdir -p /opt
+pushd /opt/setup-openresty
+./setup-openresty \
+  --prefix=/opt/openresty-rtmp \
+  --with-rtmp \
+  --with-stream \
+  --with-stream-lua \
+  --with-stream-ssl
+popd
 
 LUAROCKS=/opt/openresty-rtmp/bin/luarocks
 
-if [[ ! -f /src/nginx-rtmp-module-${NGINX_RTMP_VERSION}.tar.gz ]] ; then
-  curl -R -L -o /src/nginx-rtmp-module-${NGINX_RTMP_VERSION}.tar.gz \
-    "https://github.com/arut/nginx-rtmp-module/archive/v${NGINX_RTMP_VERSION}.tar.gz"
-fi
-
-if [[ ! -f /src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}.tar.gz ]] ; then
-  curl -R -L -o /src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}.tar.gz \
-    "https://github.com/openresty/stream-lua-nginx-module/archive/${STREAM_LUA_NGINX_VERSION}.tar.gz"
-fi
-
-if [[ ! -f /src/openresty-${OPENRESTY_VERSION}.tar.gz ]] ; then
-  curl -R -L -o /src/openresty-${OPENRESTY_VERSION}.tar.gz \
-    "https://openresty.org/download/openresty-${OPENRESTY_VERSION}.tar.gz"
-fi
-
-if [[ ! -f /src/luarocks-${LUAROCKS_VERSION}.tar.gz ]] ; then
-  curl -R -L -o /src/luarocks-${LUAROCKS_VERSION}.tar.gz \
-    "https://luarocks.github.io/luarocks/releases/luarocks-${LUAROCKS_VERSION}.tar.gz"
-fi
-
-if [[ ! -f /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz ]] ; then
+if ! test -f /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz ; then
   curl -R -L -o /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz \
     "https://github.com/jprjr/sockexec/releases/download/${SOCKEXEC_VERSION}/sockexec-x86_64-linux-musl.tar.gz"
 fi
 
-if [[ ! -d /src/nginx-rtmp-module-${NGINX_RTMP_VERSION} ]] ; then
-  tar xf "/src/nginx-rtmp-module-${NGINX_RTMP_VERSION}.tar.gz" -C /src
-fi
-
-if [[ ! -d /src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION} ]] ; then
-  tar xf "/src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}.tar.gz" -C /src
-fi
-
-if [[ ! -d /src/openresty-${OPENRESTY_VERSION} ]] ; then
-  tar xf "/src/openresty-${OPENRESTY_VERSION}.tar.gz" -C /src
-fi
-
-if [[ ! -d /src/luarocks-${LUAROCKS_VERSION} ]] ; then
-  tar xf "/src/luarocks-${LUAROCKS_VERSION}.tar.gz" -C /src
-fi
-
-if [[ ! -d "/opt/openresty-${OPENRESTY_VERSION}-rtmp" ]] ; then
-  pushd /src/openresty-${OPENRESTY_VERSION}
-  ./configure \
-    --prefix=/opt/openresty-${OPENRESTY_VERSION}-rtmp \
-    --with-pcre-jit \
-    --with-ipv6 \
-    --with-stream \
-    --with-stream_ssl_module \
-    --add-module=/src/nginx-rtmp-module-${NGINX_RTMP_VERSION} \
-    --add-module=/src/stream-lua-nginx-module-${STREAM_LUA_NGINX_VERSION}
-  make
-  make install
-  popd
-fi
-
-rm -f /opt/openresty-rtmp
-ln -s openresty-${OPENRESTY_VERSION}-rtmp /opt/openresty-rtmp
-
-if [[ ! -f /opt/openresty-${OPENRESTY_VERSION}-rtmp/bin/luarocks ]] ; then
-  pushd /src/luarocks-${LUAROCKS_VERSION}
-  ./configure \
-    --prefix=/opt/openresty-${OPENRESTY_VERSION}-rtmp \
-    --with-lua=/opt/openresty-${OPENRESTY_VERSION}-rtmp/luajit \
-    --lua-suffix=jit \
-    --with-lua-include=/opt/openresty-${OPENRESTY_VERSION}-rtmp/luajit/include/luajit-2.1
-  make build
-  make install
-  popd
-fi
-
-if [[ ! -d /opt/sockexec-${SOCKEXEC_VERSION} ]] ; then
+if ! test -d /opt/sockexec-${SOCKEXEC_VERSION} ; then
   mkdir /opt/sockexec-${SOCKEXEC_VERSION}
   tar xf /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz -C /opt/sockexec-${SOCKEXEC_VERSION} -o
 fi
@@ -120,7 +159,7 @@ fi
 rm -f /opt/sockexec
 ln -s sockexec-${SOCKEXEC_VERSION} /opt/sockexec
 
-if [[ ! -d /opt/htpasswd-auth-server ]] ; then
+if ! test -d /opt/htpasswd-auth-server ; then
   git clone https://github.com/jprjr/htpasswd-auth-server.git /opt/htpasswd-auth-server
 else
   pushd /opt/htpasswd-auth-server
@@ -128,7 +167,15 @@ else
   popd
 fi
 
-if [[ ! -d /opt/multistreamer ]] ; then
+if ! test -d /opt/postgres-auth-server ; then
+  git clone https://github.com/jprjr/postgres-auth-server.git /opt/postgres-auth-server
+else
+  pushd /opt/postgres-auth-server
+  git pull origin master
+  popd
+fi
+
+if ! test -d /opt/multistreamer ; then
   git clone https://github.com/jprjr/multistreamer.git /opt/multistreamer
 else
   pushd /opt/multistreamer
@@ -145,10 +192,12 @@ $LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION
 $LUAROCKS --tree=lua_modules install lbase64 $LUA_LBASE64_VERSION
 popd
 
-sed "s/@@LUA_CJSON_VERSION@@/$LUA_CJSON_VERSION/g" < lua-cjson.rockspec.template > lua-cjson-${LUA_CJSON_VERSION}-0.rockspec
-$LUAROCKS --tree=/opt/multistreamer/lua_modules install lua-cjson-${LUA_CJSON_VERSION}-0.rockspec
+pushd /opt/postgres-auth-server
+$LUAROCKS --tree=lua_modules install --only-deps /opt/postgres-auth-server/rockspecs/postgres-auth-server-dev-1.rockspec
+popd
 
 pushd /opt/multistreamer
+$LUAROCKS --tree=lua_modules install lua-cjson
 $LUAROCKS --tree=lua_modules install lua-resty-exec $LUA_LUA_RESTY_EXEC_VERSION
 $LUAROCKS --tree=lua_modules install lua-resty-jit-uuid $LUA_LUA_RESTY_JIT_UUID_VERSION
 $LUAROCKS --tree=lua_modules install lua-resty-string $LUA_LUA_RESTY_STRING_VERSION
@@ -166,6 +215,12 @@ cat > /usr/local/bin/htpasswd-auth-server <<EOF
 exec /opt/htpasswd-auth-server/bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit "\$@"
 EOF
 
+cat > /usr/local/bin/postgres-auth-server <<EOF
+#!/usr/bin/env bash
+
+exec /opt/postgres-auth-server/bin/postgres-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit "\$@"
+EOF
+
 cat > /usr/local/bin/multistreamer <<EOF
 #!/usr/bin/env bash
 
@@ -177,10 +232,21 @@ chmod +x /usr/local/bin/multistreamer
 rm -f /usr/local/bin/sockexec
 ln -s /opt/sockexec/bin/sockexec /usr/local/bin/sockexec
 
-useradd -m -d /var/lib/multistreamer \
-  -r -s /usr/sbin/nologin multistreamer || true
+if command -v useradd >/dev/null 2>&1 ; then
+  useradd -m -d /var/lib/multistreamer \
+    -r -s /usr/sbin/nologin multistreamer || true
+elif command -v adduser >/dev/null 2>&1 ; then
+  adduser -h /var/lib/multistreamer \
+    -s /sbin/nologin \
+    -S -D multistreamer || true
+else
+  printf "Unable to add multistreamer user"
+  exit 1
+fi
 
-cat > /etc/systemd/system/multistreamer.service <<EOF
+
+if test -d /etc/systemd/system ; then
+  cat > /etc/systemd/system/multistreamer.service <<EOF
 [Unit]
 Description=multistreamer
 After=network.target
@@ -193,7 +259,7 @@ User=multistreamer
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/sockexec.service <<EOF
+  cat > /etc/systemd/system/sockexec.service <<EOF
 [Unit]
 Description=sockexec
 After=network.target
@@ -206,7 +272,7 @@ User=multistreamer
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/htpasswd-auth-server.service <<EOF
+  cat > /etc/systemd/system/htpasswd-auth-server.service <<EOF
 [Unit]
 Description=htpasswd-auth-server
 After=network.target
@@ -218,3 +284,19 @@ User=multistreamer
 [Install]
 WantedBy=multi-user.target
 EOF
+
+  cat > /etc/systemd/system/postgres-auth-server.service <<EOF
+[Unit]
+Description=postgres-auth-server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/postgres-auth-server run
+User=multistreamer
+
+[Install]
+WantedBy=multi-user.target
+EOF
+else
+  printf "systemd not installed, not making service files\n"
+fi

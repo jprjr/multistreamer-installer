@@ -1,58 +1,70 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -e
 
-if [[ "$(id -u)" != "0" ]] ; then
-  echo "Run this script as root"
+if test "$(id -u)" != "0" ; then
+  printf "Run this script as root\n"
   exit 1
 fi
 
 domain=$1
 
-if [[ -z "${domain}" ]] ; then
-  echo "Usage: $0 <domain-name>"
-  echo "  domain will be used for Let's Encrypt certificates"
+if test -z "${domain}" ; then
+  printf "Usage: $0 <domain-name>\n"
+  printf "  domain will be used for Let's Encrypt certificates\n"
   exit 1
 fi
 
-echo "WARNING: this script is meant for doing a from-scratch install"
-echo "of multistreamer to a brand-new server. If you want to just"
-echo "install Multistreamer without possibly breaking anything, run"
-echo "./install"
-echo ""
-echo "This WILL disable apache, if running, and setup nginx to serve"
-echo "$domain"
-echo "Please type Y to continue, anything else to quit"
+printf "WARNING: this script is meant for doing a from-scratch install\n"
+printf "of multistreamer to a brand-new server. If you want to just\n"
+printf "install Multistreamer without possibly breaking anything, run\n"
+printf "./install\n\n"
+printf "This WILL disable apache, if running, and setup nginx to serve\n"
+printf "$domain\n"
+printf "Please type Y to continue, anything else to quit\n"
 
 read input
 
-if [[ "${input}" != "Y" && "${input}" != "y" ]] ; then
+if [ "${input}" != "Y" ] && [ "${input}" != "y" ] ; then
   exit
 fi
 
+if test -f /etc/os-release ; then
+  DISTRO=$(. /etc/os-release && printf "${ID}" )
+  RELEASE=$(. /etc/os-release && printf "${VERSION_ID}" )
+elif test -f /etc/fedora-release ; then
+  DISTRO="fedora"
+  RELEASE="Unknown"
+elif test -f /etc/debian_version ; then
+  DISTRO="debian"
+  RELEASE="Unknown"
+elif test -f /etc/redhat-release ; then
+  DISTRO="centos"
+  RELEASE="Unknown"
+elif test -f /etc/alpine-release ; then
+  DISTRO="alpine"
+  RELEASE="Unknown"
+fi
 
-DISTRO=$(lsb_release -i -s)
-RELEASE=$(lsb_release -r -s)
-
-if [[ -z "${DISTRO}" || -z "${RELEASE}" ]] ; then
-  echo "Unable to determine distro"
+if test -z "${DISTRO}" ; then
+  printf "Unable to determine distro\n"
   exit 1
 fi
 
 LOGFILE=$(mktemp)
 
-echo "Logging most commands to $LOGFILE..."
-echo "If this script doesn't print \"SUCCESS\", please inspect $LOGFILE for details"
+printf "Logging most commands to $LOGFILE...\n"
+printf "If this script doesn't print \"SUCCESS\", please inspect $LOGFILE for details\n"
 
-echo "Installing Multistreamer, Sockexec, and htpasswd-auth-server..."
+printf "Installing Multistreamer, Sockexec, and htpasswd-auth-server...\n"
 ./install >$LOGFILE 2>&1
 
 
-if [[ "${DISTRO}" = "Ubuntu" ]] ; then
-  echo "Stopping/disabling apache2..."
+if test "${DISTRO}" = "Ubuntu" ; then
+  printf "Stopping/disabling apache2...\n"
   systemctl disable apache2.service >/dev/null 2>&1 || true
   systemctl stop apache2.service >/dev/null 2>&1 || true
 
-  echo "Updating apt cache, installing packages..."
+  printf "Updating apt cache, installing packages...\n"
   apt-get update >$LOGFILE 2>&1
   apt-get install -y \
     nginx-light \
@@ -60,15 +72,14 @@ if [[ "${DISTRO}" = "Ubuntu" ]] ; then
     redis-server \
     git-core \
     curl \
-    openssl \
     haproxy >$LOGFILE 2>&1
 else
-  echo "Distro ${DISTRO} not supported"
+  printf "Distro ${DISTRO} not supported\n"
   exit 1
 fi
 
-echo "Installing/updated dehydrated..."
-if [[ ! -e /opt/dehydrated ]] ; then
+printf "Installing/updated dehydrated...\n"
+if ! test -d /opt/dehydrated ; then
   git clone https://github.com/lukas2511/dehydrated.git /opt/dehydrated >$LOGFILE 2>&1
 else
   pushd /opt/dehydrated >/dev/null 2>&1
@@ -83,27 +94,27 @@ popd >/dev/null 2>&1
 mkdir -p /var/www/wellknown
 mkdir -p /etc/dehydrated
 
-echo "WELLKNOWN=/var/www/wellknown" > /etc/dehydrated/config
-echo "$domain" > /etc/dehydrated/domains.txt
+printf "WELLKNOWN=/var/www/wellknown\n" > /etc/dehydrated/config
+printf "$domain\n" > /etc/dehydrated/domains.txt
 
 chown -R www-data:www-data /var/www/wellknown
 chown -R www-data:www-data /etc/dehydrated
 
-echo "Registering with Let's Encrypt"
-if [[ ! -d /etc/dehydrated/accounts ]] ; then
+printf "Registering with Let's Encrypt\n"
+if ! test -d /etc/dehydrated/accounts ; then
   sudo -u www-data /opt/dehydrated/dehydrated --register --accept-terms >$LOGFILE 2>&1
 fi
 
-if [[ ! -d /etc/dehydrated/certs ]] ; then
+if ! test -d /etc/dehydrated/certs ; then
   sudo -u www-data mkdir /etc/dehydrated/certs
 fi
 
-if [[ ! -d /etc/dehydrated/certs/$domain ]] ; then
+if ! test -d /etc/dehydrated/certs/$domain ; then
   sudo -u www-data mkdir /etc/dehydrated/certs/$domain
 fi
 
-echo "Generating temporary self-signed certificate"
-if [[ ! -e /etc/dehydrated/certs/$domain/fullchain.pem ]] ; then
+printf "Generating temporary self-signed certificate\n"
+if ! test -e /etc/dehydrated/certs/$domain/fullchain.pem ; then
   # generate a temporary self-signed cert so nginx doesn't complain
   sudo -u www-data openssl req -new \
     -subj "/CN=$domain" \
@@ -118,7 +129,7 @@ cat /etc/dehydrated/certs/$domain/fullchain.pem \
 
 rm /etc/nginx/sites-available/default
 
-echo "Generating nginx configs..."
+printf "Generating nginx configs...\n"
 cat <<EOF >/etc/nginx/sites-available/default
 server {
   listen [::]:80 default_server ipv6only=off;
@@ -160,8 +171,9 @@ server {
   ssl_certificate_key /etc/dehydrated/certs/$domain/privkey.pem;
 
   server_name $domain;
-  location / {
-    proxy_pass http://127.0.0.1:8081;
+
+  location /users {
+    proxy_pass http://127.0.0.1:8080;
     proxy_request_buffering off;
     proxy_http_version 1.1;
     proxy_set_header Host \$host;
@@ -175,16 +187,23 @@ server {
     proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection "upgrade";
   }
+
+  location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_request_buffering off;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+  }
 }
 EOF
 
-if [[ ! -e /etc/nginx/sites-enabled/$domain ]] ; then
-  echo "Restarting nginx..."
+if ! test -e /etc/nginx/sites-enabled/$domain ; then
+  printf "Restarting nginx...\n"
   ln -s ../sites-available/$domain /etc/nginx/sites-enabled/$domain
   systemctl restart nginx.service >$LOGFILE 2>&1
 fi
 
-echo "Generating haproxy config..."
+printf "Generating haproxy config...\n"
 cat <<EOF >/etc/haproxy/haproxy.cfg
 global
 	maxconn 2048
@@ -232,12 +251,12 @@ EOF
 
 systemctl restart haproxy.service >$LOGFILE 2>&1
 
-echo "Creating multistreamer user and database..."
+printf "Creating multistreamer user and database...\n"
 sudo -u postgres psql -c "create user multistreamer with password 'multistreamer'" >/dev/null 2>&1 || true
 sudo -u postgres psql -c "create database multistreamer with owner multistreamer" >/dev/null 2>&1 || true
 
-echo "Generating multistreamer config file (/opt/multistreamer/config.lua..."
-if [[ ! -e /opt/multistreamer/config.lua ]] ; then
+printf "Generating multistreamer config file (/opt/multistreamer/config.lua...\n"
+if ! test -e /opt/multistreamer/config.lua ; then
 session_secret=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
 
 cat <<EOF > /opt/multistreamer/config.lua
@@ -403,8 +422,8 @@ config({'production'}, {
 EOF
 fi
 
-echo "Generating htpasswd-auth-server config file (/opt/htpasswd-auth-server/etc/config.lua)..."
-if [[ ! -e /opt/htpasswd-auth-server/etc/config.lua ]] ; then
+printf "Generating htpasswd-auth-server config file (/opt/htpasswd-auth-server/etc/config.lua)...\n"
+if ! test -e /opt/htpasswd-auth-server/etc/config.lua ; then
 cat <<EOF >/opt/htpasswd-auth-server/etc/config.lua
 local config = {
     -- set a path to nginx
@@ -438,14 +457,14 @@ return config;
 EOF
 fi
 
-echo "Generating script to auto-renew Let's Encrypt certs..."
+printf "Generating script to auto-renew Let's Encrypt certs...\n"
 cat <<EOF >/etc/cron.daily/update-letsencrypt-certs
 #!/usr/bin/env bash
 set -e
 
 sudo -u www-data /opt/dehydrated/dehydrated -c >/dev/null 2>&1
 
-if [[ /etc/dehydrated/certs/$domain/fullchain.pem -nt /etc/dehydrated/certs/$domain/combined.pem ]] ; then
+if test /etc/dehydrated/certs/$domain/fullchain.pem -nt /etc/dehydrated/certs/$domain/combined.pem ; then
   cat /etc/dehydrated/certs/$domain/fullchain.pem \
       /etc/dehydrated/certs/$domain/privkey.pem > \
       /etc/dehydrated/certs/$domain/combined.pem
@@ -455,16 +474,16 @@ EOF
 
 chmod +x /etc/cron.daily/update-letsencrypt-certs
 
-echo "Getting Let's Encrypt certificates..."
+printf "Getting Let's Encrypt certificates...\n"
 /etc/cron.daily/update-letsencrypt-certs >$LOGFILE 2>&1
 
-if [[ ! -e /opt/htpasswd-auth-server/etc/htpasswd ]] ; then
-  echo "Creating first user for htpasswd-auth-server..."
+if ! test -e /opt/htpasswd-auth-server/etc/htpasswd ; then
+  printf "Creating first user for htpasswd-auth-server...\n"
   htpasswd-auth-server add
 fi
 
-echo "Enabling and starting sockexec, htpasswd-auth-server, multistreamer..."
+printf "Enabling and starting sockexec, htpasswd-auth-server, multistreamer...\n"
 systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
 systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
 
-echo "SUCCESS"
+printf "SUCCESS\n"

@@ -567,7 +567,7 @@ http_listen: '127.0.0.1:8080'
 ### Examples:
 ###   http_prefix: '/users'
 ### Default: http_prefix:  # empty/blank
-http_prefix: '/users/
+http_prefix: '/users'
 
 ### Uncomment encryption_method if you need to change the default encryption
 ### available methods, from best to worst:

@@ -112,14 +112,16 @@ LOGFILE=$(mktemp)
 printf "Logging most commands to $LOGFILE...\n"
 printf "If this script doesn't print \"SUCCESS\", please inspect $LOGFILE for details\n"
 
+printf "## Updating package lists...\n" | tee -a $LOGFILE
 if test -n "${UPDATE_CMD}" ; then
   ${UPDATE_CMD} >> $LOGFILE 2>&1
 fi
 
+printf "## Installing packages: ${PACKAGE_LIST}...\n" | tee -a $LOGFILE
 ${INSTALL_CMD} ${PACKAGE_LIST} >> $LOGFILE 2>&1
 
 printf "## Installing Multistreamer, Sockexec, and postgres-auth-server...\n" | tee -a $LOGFILE
-./install >>$LOGFILE 2>&1
+./install 2>&1 | tee -a $LOGFILE
 
 if command -v systemctl >/dev/null 2>&1 ; then
   printf "## Stopping/disabling apache2...\n" | tee -a $LOGFILE

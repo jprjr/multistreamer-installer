@@ -114,10 +114,15 @@ if test -z "${INSTALL_CMD}" ; then
   exit 1
 fi
 
+PACKAGE_LOGFILE=$(mktemp)
+
 if test -n "${UPDATE_CMD}" ; then
-  ${UPDATE_CMD}
+  printf "Updating package lists...\n" | tee -a $PACKAGE_LOGFILE
+  ${UPDATE_CMD} >> $PACKAGE_LOGFILE 2>&1
 fi
-${INSTALL_CMD} ${PACKAGE_LIST}
+
+printf "Installing packages ${PACKAGE_LIST}\n" | tee -a $PACKAGE_LOGFILE
+${INSTALL_CMD} ${PACKAGE_LIST} >> $PACKAGE_LOGFILE 2>&1
 
 if ! test -d "/src" ; then
   mkdir "/src"

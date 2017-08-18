@@ -291,7 +291,8 @@ Description=postgres-auth-server
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/postgres-auth-server run
+ExecStart=/usr/local/bin/postgres-auth-server -c /etc/postgres-auth-server/config.yaml run
+ExecStartPre=/usr/local/bin/postgres-auth-server -c /etc/postgres-auth-server/config.yaml check
 User=multistreamer
 
 [Install]

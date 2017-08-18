@@ -633,7 +633,7 @@ return config;
 EOF
 fi
 
-POSTGRES_AUTH_USERCOUNT=$(postgres-auth-server -c /etc/postgres-auth-server/config.yaml count 2>/dev/null)
+POSTGRES_AUTH_USERCOUNT=$(postgres-auth-server -c /etc/postgres-auth-server/config.yaml count 2>/dev/null || true)
 if test -z ${POSTGRES_AUTH_USERCOUNT} ; then
   POSTGRES_AUTH_USERCOUNT=0
 fi

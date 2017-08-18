@@ -501,6 +501,9 @@ if ! test -e /etc/postgres-auth-server/config.yaml ; then
   session_name_line=$(grep ' session_name = ' /opt/multistreamer/config.lua)
   session_secret=$(/opt/openresty-rtmp/bin/lua -e "tmp = { ${secret_line} }; print(tmp.secret)")
   session_name=$(/opt/openresty-rtmp/bin/lua -e "tmp = { ${session_name_line} }; print(tmp.session_name)")
+  if ! test -d /etc/postgres-auth-server ; then
+    mkdir -p /etc/postgres-auth-server
+  fi
 cat <<EOF >/etc/postgres-auth-server/config.yaml
 ### Postgres connection settings
 ### No default

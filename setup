@@ -50,45 +50,112 @@ if test -z "${DISTRO}" ; then
   exit 1
 fi
 
+if test "${DISTRO}" != "ubuntu" ; then
+  printf "This script only supports ubuntu\n"
+  exit 1
+fi
+
+if ! test command -v pushd 1>/dev/null 2>&1 ; then
+pushd() {
+    if test -z "PUSHD_STACK" ; then
+        PUSHD_STACK="$PWD"
+    else
+        PUSHD_STACK="$PUSHD_STACK;$PWD"
+    fi
+    cd "$1"
+}
+popd() {
+    if test -n ${IFS+x} ; then
+      OLDIFS="${IFS}"
+    fi
+    IFS=";"
+    NEW_PUSHD_STACK=""
+    NEW_DIR=""
+    for dir in ${PUSHD_STACK} ; do
+      if test -z "${NEW_DIR}" ; then
+        NEW_DIR="${dir}"
+      else
+        if test -z "${NEW_PUSHD_STACK}" ; then
+          NEW_PUSHD_STACK="${NEW_DIR}"
+        else
+          NEW_PUSHD_STACK="${NEW_PUSHD_STACK};${NEW_DIR}"
+        fi
+        NEW_DIR="${dir}"
+      fi
+    done
+    if test -n ${OLDIFS+x} ; then
+      IFS="${OLDIFS}"
+    else
+      unset IFS
+    fi
+    cd "${NEW_DIR}"
+    PUSHD_STACK="${NEW_PUSHD_STACK}"
+    unset NEW_PUSHD_STACK
+    unset NEW_DIR
+}
+fi
+
+if test "${DISTRO}" = "ubuntu" ; then
+  UPDATE_CMD="apt-get update"
+  INSTALL_CMD="apt-get install -y"
+  PACKAGE_LIST="nginx-light postgresql redis-server git-core curl haproxy"
+
+fi
+
+if test -z "${INSTALL_CMD}" ; then
+  printf "Unable to install packages on this distro\n"
+  exit 1
+fi
+
 LOGFILE=$(mktemp)
 
 printf "Logging most commands to $LOGFILE...\n"
 printf "If this script doesn't print \"SUCCESS\", please inspect $LOGFILE for details\n"
 
-printf "Installing Multistreamer, Sockexec, and htpasswd-auth-server...\n"
-./install >$LOGFILE 2>&1
-
-
-if test "${DISTRO}" = "Ubuntu" ; then
-  printf "Stopping/disabling apache2...\n"
-  systemctl disable apache2.service >/dev/null 2>&1 || true
-  systemctl stop apache2.service >/dev/null 2>&1 || true
-
-  printf "Updating apt cache, installing packages...\n"
-  apt-get update >$LOGFILE 2>&1
-  apt-get install -y \
-    nginx-light \
-    postgresql \
-    redis-server \
-    git-core \
-    curl \
-    haproxy >$LOGFILE 2>&1
-else
-  printf "Distro ${DISTRO} not supported\n"
-  exit 1
+if test -n "${UPDATE_CMD}" ; then
+  ${UPDATE_CMD} >> $LOGFILE 2>&1
 fi
 
-printf "Installing/updated dehydrated...\n"
+${INSTALL_CMD} ${PACKAGE_LIST} >> $LOGFILE 2>&1
+
+printf "## Installing Multistreamer, Sockexec, and postgres-auth-server...\n" | tee -a $LOGFILE
+./install >>$LOGFILE 2>&1
+
+if command -v systemctl >/dev/null 2>&1 ; then
+  printf "## Stopping/disabling apache2...\n" | tee -a $LOGFILE
+  systemctl disable apache2.service >/dev/null 2>&1 || true
+  systemctl stop apache2.service >/dev/null 2>&1 || true
+elif command -v rc-service >/dev/null 2>&1 ; then
+  printf "## Stopping/disabling apache2...\n" | tee -a $LOGFILE
+  rc-service apache2 stop || true
+  rc-service apache stop || true
+  rc-service httpd stop || true
+  rc-update delete apache2 || true
+  rc-update delete apache || true
+  rc-update delete httpd || true
+elif command -v service >/dev/null 2>&1 ; then
+  printf "## Stopping/disabling apache2...\n" | tee -a $LOGFILE
+  service apache2 stop || true
+  service apache stop || true
+  service httpd stop || true
+  update-rc.d apache2 remove || true
+  update-rc.d apache remove || true
+  update-rc.d httpd remove || true
+else
+  printf "## Unable to stop/disable apache2, this may crap out...\n" | tee -a $LOGFILE
+fi
+
+printf "## Installing/updated dehydrated...\n" | tee -a $LOGFILE
 if ! test -d /opt/dehydrated ; then
-  git clone https://github.com/lukas2511/dehydrated.git /opt/dehydrated >$LOGFILE 2>&1
+  git clone https://github.com/lukas2511/dehydrated.git /opt/dehydrated >>$LOGFILE 2>&1
 else
   pushd /opt/dehydrated >/dev/null 2>&1
-  git fetch --tags origin >$LOGFILE 2>&1
+  git fetch --tags origin >>$LOGFILE 2>&1
   popd >/dev/null 2>&1
 fi
 
 pushd /opt/dehydrated >/dev/null 2>&1
-git checkout $(git describe --tags --abbrev=0) >$LOGFILE 2>&1
+git checkout $(git describe --tags --abbrev=0) >>$LOGFILE 2>&1
 popd >/dev/null 2>&1
 
 mkdir -p /var/www/wellknown
@@ -100,9 +167,9 @@ printf "$domain\n" > /etc/dehydrated/domains.txt
 chown -R www-data:www-data /var/www/wellknown
 chown -R www-data:www-data /etc/dehydrated
 
-printf "Registering with Let's Encrypt\n"
+printf "## Registering with Let's Encrypt\n" | tee -a $LOGFILE
 if ! test -d /etc/dehydrated/accounts ; then
-  sudo -u www-data /opt/dehydrated/dehydrated --register --accept-terms >$LOGFILE 2>&1
+  sudo -u www-data /opt/dehydrated/dehydrated --register --accept-terms >>$LOGFILE 2>&1
 fi
 
 if ! test -d /etc/dehydrated/certs ; then
@@ -113,14 +180,14 @@ if ! test -d /etc/dehydrated/certs/$domain ; then
   sudo -u www-data mkdir /etc/dehydrated/certs/$domain
 fi
 
-printf "Generating temporary self-signed certificate\n"
+printf "## Generating temporary self-signed certificate\n" | tee -a $LOGFILE
 if ! test -e /etc/dehydrated/certs/$domain/fullchain.pem ; then
   # generate a temporary self-signed cert so nginx doesn't complain
   sudo -u www-data openssl req -new \
     -subj "/CN=$domain" \
     -sha256 -newkey rsa:2048 -days 365 -nodes -x509 \
     -keyout /etc/dehydrated/certs/$domain/privkey.pem \
-    -out /etc/dehydrated/certs/$domain/fullchain.pem >$LOGFILE 2>&1
+    -out /etc/dehydrated/certs/$domain/fullchain.pem >>$LOGFILE 2>&1
 fi
 
 cat /etc/dehydrated/certs/$domain/fullchain.pem \
@@ -129,7 +196,7 @@ cat /etc/dehydrated/certs/$domain/fullchain.pem \
 
 rm /etc/nginx/sites-available/default
 
-printf "Generating nginx configs...\n"
+printf "## Generating nginx configs...\n" | tee -a $LOGFILE
 cat <<EOF >/etc/nginx/sites-available/default
 server {
   listen [::]:80 default_server ipv6only=off;
@@ -198,12 +265,12 @@ server {
 EOF
 
 if ! test -e /etc/nginx/sites-enabled/$domain ; then
-  printf "Restarting nginx...\n"
+  printf "## Restarting nginx...\n" | tee -a $LOGFILE
   ln -s ../sites-available/$domain /etc/nginx/sites-enabled/$domain
-  systemctl restart nginx.service >$LOGFILE 2>&1
+  systemctl restart nginx.service >>$LOGFILE 2>&1
 fi
 
-printf "Generating haproxy config...\n"
+printf "## Generating haproxy config...\n" | tee -a $LOGFILE
 cat <<EOF >/etc/haproxy/haproxy.cfg
 global
 	maxconn 2048
@@ -249,14 +316,20 @@ backend multistreamer-irc
 	server primary 127.0.0.1:6667
 EOF
 
-systemctl restart haproxy.service >$LOGFILE 2>&1
+systemctl restart haproxy.service >>$LOGFILE 2>&1
 
-printf "Creating multistreamer user and database...\n"
+printf "## Creating psql_auth user and database...\n" | tee -a $LOGFILE
+sudo -u postgres psql -c "create user psql_auth with password 'psql_auth'" >/dev/null 2>&1 || true
+sudo -u postgres psql -c "create database psql_auth with owner psql_auth" >/dev/null 2>&1 || true
+
+printf "## Creating multistreamer user and database...\n" | tee -a $LOGFILE
 sudo -u postgres psql -c "create user multistreamer with password 'multistreamer'" >/dev/null 2>&1 || true
 sudo -u postgres psql -c "create database multistreamer with owner multistreamer" >/dev/null 2>&1 || true
 
-printf "Generating multistreamer config file (/opt/multistreamer/config.lua...\n"
+printf "## Generating multistreamer config file (/opt/multistreamer/config.lua) ...\n" | tee -a $LOGFILE
+
 if ! test -e /opt/multistreamer/config.lua ; then
+
 session_secret=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
 
 cat <<EOF > /opt/multistreamer/config.lua
@@ -286,7 +359,7 @@ config({'production'}, {
   rtmp_prefix = 'multistreamer',
 
   -- path to your nginx+lua+rtmp binary
-  nginx = '/opt/openresty-rtmp/nginx/sbin/nginx',
+  nginx = '/opt/openresty-rtmp/bin/openresty',
 
   -- path to psql
   psql = '/usr/bin/psql',
@@ -314,7 +387,6 @@ config({'production'}, {
   -- set to true if you've setup an SSL terminator in front
   -- of multistreamer
   public_irc_ssl = true,
-  
 
   -- configure streaming networks/services
   -- you'll need to register a new app with each
@@ -422,7 +494,106 @@ config({'production'}, {
 EOF
 fi
 
-printf "Generating htpasswd-auth-server config file (/opt/htpasswd-auth-server/etc/config.lua)...\n"
+if ! test -e /etc/postgres-auth-server/config.yaml ; then
+  secret_line=$(grep ' secret = ' /opt/multistreamer/config.lua)
+  session_name_line=$(grep ' session_name = ' /opt/multistreamer/config.lua)
+  session_secret=$(lua -e "tmp = { ${secret_line} }; print(tmp.secret)")
+  session_name=$(lua -e "tmp = { ${session_name_line} }; print(tmp.session_name)")
+cat <<EOF >/etc/postgres-auth-server/config.yaml
+### Postgres connection settings
+### No default
+postgres:
+  host: 127.0.0.1
+  user: psql_auth
+  password: psql_auth
+  database: psql_auth
+
+### whether to log every SQL query and http request
+### Default:
+###   logging:
+###     queries: true
+###     requests: true
+logging:
+  queries: false
+  requests: false
+
+### what session name to store cookies in
+### Default: session_name: 'lapis_session'
+session_name: '${session_name}'
+
+### secret used to encrypt session data
+### Default: session_name: 'please-change-me'
+secret: '${session_secret}'
+
+### path to the nginx/openresty binary
+### Default: nginx_path: '/opt/openresty/bin/openresty'
+nginx_path: '/opt/openresty-rtmp/bin/openresty'
+
+### log level
+### Available methods:
+###   debug
+###   info
+###   notice
+###   warn
+###   error
+###   crit
+###   alert
+###   emerg
+### Default: log_level: 'debug'
+log_level: 'error'
+
+
+### http_listen directive. Some examples:
+###   http_listen: '127.0.0.1:8080'          # listen on loopback port 8080
+###   http_listen: '8080'                    # listen on all ipv4 addresses, port 8080
+###   http_listen: '*:8080'                  # listen on all ipv4 addresses, port 8080
+###   http_listen: '[::]:8080'               # listen on all ipv6 addresses, port 8080
+###   http_listen: '[::]:8080 ipv6only=off'  # listen on all ipv4+ipv6 addresses, port 8080
+### This can also be an array if you need to listen on multiple port + address combos
+### Example
+###   http_listen:
+###     - '127.0.0.1:8080'
+###     - '192.168.5.1:8081'
+###
+### Default: http_listen: '[::]:8080 ipv6only=off'
+http_listen: '127.0.0.1:8080'
+
+### Uncomment http_prefix if you need this at some url other than '/'
+### Examples:
+###   http_prefix: '/users'
+### Default: http_prefix:  # empty/blank
+http_prefix: '/users/
+
+### Uncomment encryption_method if you need to change the default encryption
+### available methods, from best to worst:
+###   sha512
+###   sha256
+###   ssha
+###   sha
+###   apr1
+###   md5
+### Default: encryption_method: 'sha512'
+encryption_method: 'sha512'
+
+### static_dir -- set location for static files (js, css, etc)
+### Default: auto-detected
+# static_dir:
+
+### Set the DNS resolver
+### Default: dns_resolver: '8.8.8.8 ipv6=off'
+dns_resolver: '8.8.8.8 ipv6=off'
+
+### Set the SSL certificate store
+### default: ssl_trusted_certificate: '/etc/ssl/certs/ca-certificates.crt'
+# ssl_trusted_certificate
+
+### Work directory for temporary files, etc
+### Default: $HOME/.postgres-auth-server
+# work_dir:
+EOF
+fi
+
+printf "## Generating htpasswd-auth-server config file (/opt/htpasswd-auth-server/etc/config.lua)...\n" | tee -a $LOGFILE
 if ! test -e /opt/htpasswd-auth-server/etc/config.lua ; then
 cat <<EOF >/opt/htpasswd-auth-server/etc/config.lua
 local config = {
@@ -457,7 +628,15 @@ return config;
 EOF
 fi
 
-printf "Generating script to auto-renew Let's Encrypt certs...\n"
+if test $(postgres-auth-server -c /etc/postgres-auth-server/config.yaml count) -eq 0 ; then
+  if test -e /opt/htpasswd-auth-server/etc/passwd ; then
+    postgres-auth-server -c /etc/postgres-auth-server/config.yaml import /opt/htpasswd-auth-server/etc/passwd
+  else
+    postgres-auth-server -c /etc/postgres-auth-server/config.yaml add
+  fi
+fi
+
+printf "## Generating script to auto-renew Let's Encrypt certs...\n" | tee -a $LOGFILE
 cat <<EOF >/etc/cron.daily/update-letsencrypt-certs
 #!/usr/bin/env bash
 set -e
@@ -474,19 +653,29 @@ EOF
 
 chmod +x /etc/cron.daily/update-letsencrypt-certs
 
-printf "Getting Let's Encrypt certificates...\n"
-/etc/cron.daily/update-letsencrypt-certs >$LOGFILE 2>&1
+printf "## Getting Let's Encrypt certificates...\n" | tee -a $LOGFILE
+/etc/cron.daily/update-letsencrypt-certs >>$LOGFILE 2>&1
 
 if ! test -e /opt/htpasswd-auth-server/etc/htpasswd ; then
-  printf "Creating first user for htpasswd-auth-server...\n"
+  printf "## Creating first user for htpasswd-auth-server...\n" | tee -a $LOGFILE
   htpasswd-auth-server add
 fi
 
-multistreamer -e production initdb >$LOGFILE 2>&1 || true
+multistreamer -e production initdb >>$LOGFILE 2>&1 || true
 
-printf "Enabling and starting sockexec, htpasswd-auth-server, multistreamer...\n"
+printf "## Enabling and starting sockexec, postgres-auth-server, multistreamer...\n" | tee -a $LOGFILE
 
-systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
-systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service >$LOGFILE 2>&1
+systemctl enable sockexec.service postgres-auth-server.service multistreamer.service >>$LOGFILE 2>&1
+systemctl start sockexec.service postgres-auth-server.service multistreamer.service >>$LOGFILE 2>&1
 
-printf "SUCCESS\n"
+if command -v systemctl >/dev/null 2>&1 ; then
+  systemctl stop htpasswd-auth-server.service >/dev/null 2>&1 || true
+  systemctl disable htpasswd-auth-server.service >/dev/null 2>&1 || true
+  systemctl enable sockexec.service postgres-auth-server.service multistreamer.service >>$LOGFILE 2>&1
+  systemctl start sockexec.service postgres-auth-server.service multistreamer.service >>$LOGFILE 2>&1
+else
+  printf "## Unable to enable/start services\n" | tee -a $LOGFILE
+  exit 0
+fi
+
+printf "## SUCCESS\n" | tee -a $LOGFILE

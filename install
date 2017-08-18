@@ -132,11 +132,14 @@ if ! test -d "/opt" ; then
   mkdir "/opt"
 fi
 
+MISC_LOGFILE=$(mktemp)
+
+printf "Cloning/updating setup-openresty script (details in ${MISC_LOGFILE})\n" | tee -a $MISC_LOGFILE
 if ! test -d /opt/setup-openresty ; then
-  git clone https://github.com/jprjr/setup-openresty.git /opt/setup-openresty
+  git clone https://github.com/jprjr/setup-openresty.git /opt/setup-openresty >> $MISC_LOGFILE 2>&1
 else
   pushd /opt/setup-openresty
-  git pull origin master
+  git pull origin master >> $MISC_LOGFILE 2>&1
   popd
 fi
 
@@ -152,7 +155,8 @@ popd
 LUAROCKS=/opt/openresty-rtmp/bin/luarocks
 
 if ! test -f /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz ; then
-  curl -R -L -o /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz \
+  printf "Downloading sockexec..." | tee -a $MISC_LOGFILE
+  curl -s -R -L -o /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz \
     "https://github.com/jprjr/sockexec/releases/download/${SOCKEXEC_VERSION}/sockexec-x86_64-linux-musl.tar.gz"
 fi
 
@@ -164,54 +168,60 @@ fi
 rm -f /opt/sockexec
 ln -s sockexec-${SOCKEXEC_VERSION} /opt/sockexec
 
+printf "Cloning/updating htpasswd-auth-server...\n" | tee -a $MISC_LOGFILE
 if ! test -d /opt/htpasswd-auth-server ; then
-  git clone https://github.com/jprjr/htpasswd-auth-server.git /opt/htpasswd-auth-server
+  git clone https://github.com/jprjr/htpasswd-auth-server.git /opt/htpasswd-auth-server >> $MISC_LOGFILE 2>&1
 else
   pushd /opt/htpasswd-auth-server
-  git pull origin master
+  git pull origin master >> $MISC_LOGFILE 2>&1
   popd
 fi
 
+printf "Cloning/updating postgres-auth-server...\n" | tee -a $MISC_LOGFILE
 if ! test -d /opt/postgres-auth-server ; then
-  git clone https://github.com/jprjr/postgres-auth-server.git /opt/postgres-auth-server
+  git clone https://github.com/jprjr/postgres-auth-server.git /opt/postgres-auth-server >> $MISC_LOGFILE 2>&1
 else
   pushd /opt/postgres-auth-server
-  git pull origin master
+  git pull origin master >> $MISC_LOGFILE 2>&1
   popd
 fi
 
+printf "Cloning/updating multistreamer...\n" | tee -a $MISC_LOGFILE
 if ! test -d /opt/multistreamer ; then
-  git clone https://github.com/jprjr/multistreamer.git /opt/multistreamer
+  git clone https://github.com/jprjr/multistreamer.git /opt/multistreamer >> $MISC_LOGFILE 2>&1
 else
   pushd /opt/multistreamer
-  git fetch --tags origin
-  git checkout $(git describe --tags --abbrev=0)
+  git fetch --tags origin >> $MISC_LOGFILE 2>&1
+  git checkout $(git describe --tags --abbrev=0) >> $MISC_LOGFILE 2>&1
   popd
 fi
 
+printf "Installing Lua modules for htpasswd-auth-server...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
 pushd /opt/htpasswd-auth-server
-$LUAROCKS --tree=lua_modules install lecho $LUA_LECHO_VERSION
-$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION
-$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION
-$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION
-$LUAROCKS --tree=lua_modules install lbase64 $LUA_LBASE64_VERSION
+$LUAROCKS --tree=lua_modules install lecho $LUA_LECHO_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install lbase64 $LUA_LBASE64_VERSION >> $MISC_LOGFILE 2>&1
 popd
 
+printf "Installing Lua Modules for postgres-auth-server...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
 pushd /opt/postgres-auth-server
-$LUAROCKS --tree=lua_modules install --only-deps /opt/postgres-auth-server/rockspecs/postgres-auth-server-dev-1.rockspec
+$LUAROCKS --tree=lua_modules install --only-deps /opt/postgres-auth-server/rockspecs/postgres-auth-server-dev-1.rockspec >> $MISC_LOGFILE 2>&1
 popd
 
+printf "Installing Lua modules for multistreamer...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
 pushd /opt/multistreamer
-$LUAROCKS --tree=lua_modules install lua-cjson
-$LUAROCKS --tree=lua_modules install lua-resty-exec $LUA_LUA_RESTY_EXEC_VERSION
-$LUAROCKS --tree=lua_modules install lua-resty-jit-uuid $LUA_LUA_RESTY_JIT_UUID_VERSION
-$LUAROCKS --tree=lua_modules install lua-resty-string $LUA_LUA_RESTY_STRING_VERSION
-$LUAROCKS --tree=lua_modules install lua-resty-http $LUA_LUA_RESTY_HTTP_VERSION
-$LUAROCKS --tree=lua_modules install lapis $LUA_LAPIS_VERSION
-$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION
-$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION
-$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION
-$LUAROCKS --tree=lua_modules install whereami $LUA_WHEREAMI_VERSION
+$LUAROCKS --tree=lua_modules install lua-cjson >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install lua-resty-exec $LUA_LUA_RESTY_EXEC_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install lua-resty-jit-uuid $LUA_LUA_RESTY_JIT_UUID_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install lua-resty-string $LUA_LUA_RESTY_STRING_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install lua-resty-http $LUA_LUA_RESTY_HTTP_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install lapis $LUA_LAPIS_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install whereami $LUA_WHEREAMI_VERSION >> $MISC_LOGFILE 2>&1
 popd
 
 cat > /usr/local/bin/htpasswd-auth-server <<EOF
@@ -233,10 +243,14 @@ exec /opt/multistreamer/bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luaj
 EOF
 
 chmod +x /usr/local/bin/htpasswd-auth-server
+chmod +x /usr/local/bin/postgres-auth-server-auth-server
 chmod +x /usr/local/bin/multistreamer
+
 rm -f /usr/local/bin/sockexec
 ln -s /opt/sockexec/bin/sockexec /usr/local/bin/sockexec
+chmod +x /usr/local/bin/sockexec
 
+printf "Creating multistreamer user\n"
 if command -v useradd >/dev/null 2>&1 ; then
   useradd -m -d /var/lib/multistreamer \
     -r -s /usr/sbin/nologin multistreamer || true
@@ -245,7 +259,7 @@ elif command -v adduser >/dev/null 2>&1 ; then
     -s /sbin/nologin \
     -S -D multistreamer || true
 else
-  printf "Unable to add multistreamer user"
+  printf "Unable to add multistreamer user\n"
   exit 1
 fi
 

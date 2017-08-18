@@ -243,7 +243,7 @@ exec /opt/multistreamer/bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luaj
 EOF
 
 chmod +x /usr/local/bin/htpasswd-auth-server
-chmod +x /usr/local/bin/postgres-auth-server-auth-server
+chmod +x /usr/local/bin/postgres-auth-server
 chmod +x /usr/local/bin/multistreamer
 
 rm -f /usr/local/bin/sockexec

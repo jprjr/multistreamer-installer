@@ -155,7 +155,7 @@ popd
 LUAROCKS=/opt/openresty-rtmp/bin/luarocks
 
 if ! test -f /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz ; then
-  printf "Downloading sockexec..." | tee -a $MISC_LOGFILE
+  printf "Downloading sockexec...\n" | tee -a $MISC_LOGFILE
   curl -s -R -L -o /opt/sockexec-${SOCKEXEC_VERSION}.tar.gz \
     "https://github.com/jprjr/sockexec/releases/download/${SOCKEXEC_VERSION}/sockexec-x86_64-linux-musl.tar.gz"
 fi

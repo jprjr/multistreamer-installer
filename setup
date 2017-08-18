@@ -638,7 +638,7 @@ if test -z ${POSTGRES_AUTH_USERCOUNT} ; then
   POSTGRES_AUTH_USERCOUNT=0
 fi
 
-if test $(postgres-auth-server -c /etc/postgres-auth-server/config.yaml count) -eq 0 ; then
+if test ${POSTGRES_AUTH_USERCOUNT} -eq 0 ; then
   if test -e /opt/htpasswd-auth-server/etc/passwd ; then
     postgres-auth-server -c /etc/postgres-auth-server/config.yaml import /opt/htpasswd-auth-server/etc/passwd
   else

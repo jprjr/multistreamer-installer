@@ -598,41 +598,6 @@ dns_resolver: '8.8.8.8 ipv6=off'
 EOF
 fi
 
-printf "## Generating htpasswd-auth-server config file (/opt/htpasswd-auth-server/etc/config.lua)...\n" | tee -a $LOGFILE
-if ! test -e /opt/htpasswd-auth-server/etc/config.lua ; then
-cat <<EOF >/opt/htpasswd-auth-server/etc/config.lua
-local config = {
-    -- set a path to nginx
-    -- this is required
-    nginx = '/opt/openresty-rtmp/nginx/sbin/nginx';
-
-    -- set the log level
-    -- default: error
-    -- valid values: debug, info, notice, warn, error, crit, alert, emerg
-    log_level = "error";
-
-    -- set a custom working directory
-    -- optional, defaults to $HOME/.htpasswd-auth-server
-    -- work_dir = "/home/user/something";
-
-    -- set listen interface+port or unix path
-    -- optional, defaults to 127.0.0.1:8080
-    -- see http://nginx.org/en/docs/http/ngx_http_core_module.html#listen
-    listen = "127.0.0.1:8080";
-
-    -- set the number of worker processes
-    -- optional, defaults to 1
-    worker_processes = 1;
-
-    -- set the realm
-    -- optional, defaults to 'default'
-    realm = 'default';
-}
-
-return config;
-EOF
-fi
-
 POSTGRES_AUTH_USERCOUNT=$(postgres-auth-server -c /etc/postgres-auth-server/config.yaml count 2>/dev/null || true)
 if test -z ${POSTGRES_AUTH_USERCOUNT} ; then
   POSTGRES_AUTH_USERCOUNT=0
@@ -665,11 +630,6 @@ chmod +x /etc/cron.daily/update-letsencrypt-certs
 
 printf "## Getting Let's Encrypt certificates...\n" | tee -a $LOGFILE
 /etc/cron.daily/update-letsencrypt-certs >>$LOGFILE 2>&1
-
-if ! test -e /opt/htpasswd-auth-server/etc/htpasswd ; then
-  printf "## Creating first user for htpasswd-auth-server...\n" | tee -a $LOGFILE
-  htpasswd-auth-server add
-fi
 
 multistreamer -e production initdb >>$LOGFILE 2>&1 || true
 

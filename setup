@@ -458,7 +458,7 @@ config({'production'}, {
   -- header to this URL when a user logs in
   -- see http://nginx.org/en/docs/http/ngx_http_auth_request_module.html
   -- see https://github.com/jprjr/ldap-auth-server for an LDAP implementation
-  auth_endpoint = 'http://127.0.0.1:8080/',
+  auth_endpoint = 'http://127.0.0.1:8080/users/auth',
 
   -- redis host
   redis_host = '127.0.0.1:6379',

@@ -10,12 +10,12 @@ This will:
 1. Download ffmpeg, and dependencies for compiling OpenResty
 2. Download/Compile/Install OpenResty + the nginx RTMP module and Stream-Lua modules
 3. Install a precompiled version of [sockexec](https://github.com/jprjr/sockexec)
-4. Download [htpasswd-auth-server](https://github.com/jprjr/htpasswd-auth-server)
+4. Download [postgres-auth-server](https://github.com/jprjr/postgres-auth-server)
 5. Download [Multistreamer](https://github.com/jprjr/multistreamer)
-6. Install needed lua modules for htpasswd-auth-server/multistreamer
-7. Create scripts under /usr/local/bin for launching htpasswd-auth-server, multistreamer, and sockexec
+6. Install needed lua modules for postgres-auth-server/multistreamer
+7. Create scripts under /usr/local/bin for launching postgres-auth-server, multistreamer, and sockexec
 8. Create a multistreamer user
-9. Create systemd service units for htpasswd-auth-server, multistreamer, and sockexec
+9. Create systemd service units for postgres-auth-server, multistreamer, and sockexec
 
 Optionally, it can:
 
@@ -23,7 +23,7 @@ Optionally, it can:
 2. Install nginx + haproxy as reverse proxies
 3. Setup dehydrated for automatic renewel of Let's Encrypt certificates
 4. Create a basic configuration for multistreamer
-5. Add your first user to htpasswd-auth-server
+5. Add your first user to postgres-auth-server or import users from an older htpasswd-auth-server installation
 
 ## Usage
 
@@ -32,7 +32,7 @@ Clone this repo somewhere, and either run `install` as root, or `setup` as root.
 ```
 git clone https://github.com/jprjr/multistreamer-installer
 cd multistreamer
-sudo ./install # or sudo ./setup
+sudo ./install # or sudo ./setup <domain>
 ```
 
 `install` *just* downloads + compiles openresty, multistreamer, sockexec, etc. It doesn't
@@ -50,19 +50,19 @@ running Apache, it disables Apache, for example. So `setup` should only be run o
 When done, you'll have everything installed under `/opt`:
 
 * `/opt/sockexec`
-* `/opt/htpasswd-auth-server`
+* `/opt/postgres-auth-server`
 * `/opt/multistreamer`
 
 Additionally, convenience scripts are placed in /usr/local/bin, so instead
 of typing long commands like:
 
-* `./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit add`
-* `./bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit run`
+* `./bin/postgres-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit add`
+* `./bin/postgres-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit run`
 
 you can simply call
 
-* `htpasswd-auth-server add`
-* `htpasswd-auth-server run`
+* `postgres-auth-server add`
+* `postgres-auth-server run`
 
 Similarly for multistreamer, instead of typing:
 
@@ -75,22 +75,25 @@ you can just type
 * `multistreamer -e prod run`
 
 Basically, the `-l /opt/openresty-rtmp/luajit/bin/luajit` part of the command isn't
-needed if you just type `multistreamer` instead of `./bin/multistreamer`, `htpasswd-auth-server`
-instead of `./bin/htpasswd-auth-server`
+needed if you just type `multistreamer` instead of `./bin/multistreamer`, `postgres-auth-server`
+instead of `./bin/postgres-auth-server`
 
-Once you've finished setting up htpasswd-auth, multistreamer, etc manually and you're
+Once you've finished setting up postgres-auth, multistreamer, etc manually and you're
 sure everything is to your liking, enable and start the services:
 
 ```
-systemctl enable sockexec.service htpasswd-auth-server.service multistreamer.service
-systemctl start sockexec.service htpasswd-auth-server.service multistreamer.service
+systemctl enable sockexec.service postgres-auth-server.service multistreamer.service
+systemctl start sockexec.service postgres-auth-server.service multistreamer.service
 ```
 
-## Stesp to take if you run `./setup`
+## Stesp to take if you run `./setup <domain>`
 
 Nothing, you'll have Let's Encrypt certificates installed, your first user created, etc.
 
-Be sure to check out the above notes about wher Multistreamer, sockexec, and htpasswd-auth-server
+Your multistreamer installation will be available at https://<domain>, and you'll be able
+to add/remove users, change passwords, etc at https://<domain>/users
+
+Be sure to check out the above notes about where Multistreamer, sockexec, and postgres-auth-server
 are installed.
 
 Dehydrated is installed at /opt/dehydrated, and its config, certs, keys etc are at `/etc/dehydrated`. 
@@ -105,8 +108,8 @@ proxy configuration is at.
 haproxy is configured to provide SSL for the IRC port, look at `/etc/haproxy/haproxy.cfg`
 for its configuration.
 
-To create more users, just run `htpasswd-auth-server add`, you'll be prompted for a username
-and password.
+To create more users, just run `postgres-auth-server add`, you'll be prompted for a username
+and password, or visit https://<domain>/users
 
 ## License
 

@@ -120,7 +120,7 @@ fi
 printf "## Installing packages: ${PACKAGE_LIST}...\n" | tee -a $LOGFILE
 ${INSTALL_CMD} ${PACKAGE_LIST} >> $LOGFILE 2>&1
 
-printf "## Installing Multistreamer, Sockexec, and postgres-auth-server...\n" | tee -a $LOGFILE
+printf "## Installing multistreamer, sockexec, and postgres-auth-server...\n" | tee -a $LOGFILE
 ./install 2>&1 | tee -a $LOGFILE
 
 if command -v systemctl >/dev/null 2>&1 ; then

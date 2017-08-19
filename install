@@ -168,15 +168,6 @@ fi
 rm -f /opt/sockexec
 ln -s sockexec-${SOCKEXEC_VERSION} /opt/sockexec
 
-printf "Cloning/updating htpasswd-auth-server...\n" | tee -a $MISC_LOGFILE
-if ! test -d /opt/htpasswd-auth-server ; then
-  git clone https://github.com/jprjr/htpasswd-auth-server.git /opt/htpasswd-auth-server >> $MISC_LOGFILE 2>&1
-else
-  pushd /opt/htpasswd-auth-server
-  git pull origin master >> $MISC_LOGFILE 2>&1
-  popd
-fi
-
 printf "Cloning/updating postgres-auth-server...\n" | tee -a $MISC_LOGFILE
 if ! test -d /opt/postgres-auth-server ; then
   git clone https://github.com/jprjr/postgres-auth-server.git /opt/postgres-auth-server >> $MISC_LOGFILE 2>&1
@@ -195,15 +186,6 @@ else
   git checkout $(git describe --tags --abbrev=0) >> $MISC_LOGFILE 2>&1
   popd
 fi
-
-printf "Installing Lua modules for htpasswd-auth-server...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
-pushd /opt/htpasswd-auth-server
-$LUAROCKS --tree=lua_modules install lecho $LUA_LECHO_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install lbase64 $LUA_LBASE64_VERSION >> $MISC_LOGFILE 2>&1
-popd
 
 printf "Installing Lua Modules for postgres-auth-server...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
 pushd /opt/postgres-auth-server
@@ -224,12 +206,6 @@ $LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION >>
 $LUAROCKS --tree=lua_modules install whereami $LUA_WHEREAMI_VERSION >> $MISC_LOGFILE 2>&1
 popd
 
-cat > /usr/local/bin/htpasswd-auth-server <<EOF
-#!/usr/bin/env bash
-
-exec /opt/htpasswd-auth-server/bin/htpasswd-auth-server -l /opt/openresty-rtmp/luajit/bin/luajit "\$@"
-EOF
-
 cat > /usr/local/bin/postgres-auth-server <<EOF
 #!/usr/bin/env bash
 
@@ -242,7 +218,6 @@ cat > /usr/local/bin/multistreamer <<EOF
 exec /opt/multistreamer/bin/multistreamer -l /opt/openresty-rtmp/luajit/bin/luajit "\$@"
 EOF
 
-chmod +x /usr/local/bin/htpasswd-auth-server
 chmod +x /usr/local/bin/postgres-auth-server
 chmod +x /usr/local/bin/multistreamer
 
@@ -285,19 +260,6 @@ After=network.target
 
 [Service]
 ExecStart=/usr/local/bin/sockexec -t0 /tmp/exec.sock
-User=multistreamer
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  cat > /etc/systemd/system/htpasswd-auth-server.service <<EOF
-[Unit]
-Description=htpasswd-auth-server
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/htpasswd-auth-server run
 User=multistreamer
 
 [Install]

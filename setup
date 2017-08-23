@@ -112,17 +112,6 @@ LOGFILE=$(mktemp)
 printf "Logging most commands to $LOGFILE...\n"
 printf "If this script doesn't print \"SUCCESS\", please inspect $LOGFILE for details\n"
 
-printf "## Updating package lists...\n" | tee -a $LOGFILE
-if test -n "${UPDATE_CMD}" ; then
-  ${UPDATE_CMD} >> $LOGFILE 2>&1
-fi
-
-printf "## Installing packages: ${PACKAGE_LIST}...\n" | tee -a $LOGFILE
-${INSTALL_CMD} ${PACKAGE_LIST} >> $LOGFILE 2>&1
-
-printf "## Installing multistreamer, sockexec, and postgres-auth-server...\n" | tee -a $LOGFILE
-./install 2>&1 | tee -a $LOGFILE
-
 if command -v systemctl >/dev/null 2>&1 ; then
   printf "## Stopping/disabling apache2...\n" | tee -a $LOGFILE
   systemctl disable apache2.service >/dev/null 2>&1 || true
@@ -146,6 +135,17 @@ elif command -v service >/dev/null 2>&1 ; then
 else
   printf "## Unable to stop/disable apache2, this may crap out...\n" | tee -a $LOGFILE
 fi
+
+printf "## Updating package lists...\n" | tee -a $LOGFILE
+if test -n "${UPDATE_CMD}" ; then
+  ${UPDATE_CMD} >> $LOGFILE 2>&1
+fi
+
+printf "## Installing packages: ${PACKAGE_LIST}...\n" | tee -a $LOGFILE
+${INSTALL_CMD} ${PACKAGE_LIST} >> $LOGFILE 2>&1
+
+printf "## Installing multistreamer, sockexec, and postgres-auth-server...\n" | tee -a $LOGFILE
+./install 2>&1 | tee -a $LOGFILE
 
 printf "## Installing/updated dehydrated...\n" | tee -a $LOGFILE
 if ! test -d /opt/dehydrated ; then

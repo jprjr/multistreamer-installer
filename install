@@ -194,16 +194,8 @@ popd
 
 printf "Installing Lua modules for multistreamer...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
 pushd /opt/multistreamer
-$LUAROCKS --tree=lua_modules install lua-cjson >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install lua-resty-exec $LUA_LUA_RESTY_EXEC_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install lua-resty-jit-uuid $LUA_LUA_RESTY_JIT_UUID_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install lua-resty-string $LUA_LUA_RESTY_STRING_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install lua-resty-http $LUA_LUA_RESTY_HTTP_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install lapis $LUA_LAPIS_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install etlua $LUA_ETLUA_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install luaposix $LUA_LUAPOSIX_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install luafilesystem $LUA_LUAFILESYSTEM_VERSION >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install whereami $LUA_WHEREAMI_VERSION >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install --only-deps /opt/multistreamer/rockspecs/multistreamer-dev-1.rockspec >> $MISC_LOGFILE 2>&1
+$LUAROCKS --tree=lua_modules install md5 >> $MISC_LOGFILE 2>&1
 popd
 
 cat > /usr/local/bin/postgres-auth-server <<EOF
@@ -240,13 +232,14 @@ fi
 
 
 if test -d /etc/systemd/system ; then
+  printf "Creating systemd unit files\n"
   cat > /etc/systemd/system/multistreamer.service <<EOF
 [Unit]
 Description=multistreamer
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/multistreamer -e production run
+ExecStart=/usr/local/bin/multistreamer -c /etc/multistreamer/config.yaml run
 User=multistreamer
 
 [Install]
@@ -282,3 +275,5 @@ EOF
 else
   printf "systemd not installed, not making service files\n"
 fi
+
+printf "FINISHED installing Multistreamer\n"

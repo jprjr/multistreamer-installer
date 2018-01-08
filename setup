@@ -337,9 +337,11 @@ printf "## Creating multistreamer user and database...\n" | tee -a $LOGFILE
 sudo -u postgres psql -c "create user multistreamer with password 'multistreamer'" >/dev/null 2>&1 || true
 sudo -u postgres psql -c "create database multistreamer with owner multistreamer" >/dev/null 2>&1 || true
 
-printf "## Generating multistreamer config file (/opt/multistreamer/config.yaml) ...\n" | tee -a $LOGFILE
+printf "## Generating multistreamer config file (/etc/multistreamer/config.yaml) ...\n" | tee -a $LOGFILE
 
-if ! test -e /opt/multistreamer/config.yaml ; then
+mkdir -p /etc/multistreamer
+
+if ! test -e /etc/multistreamer/config.yaml ; then
 
 session_secret=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1)
 
@@ -505,10 +507,10 @@ EOF
 fi
 
 if ! test -e /etc/postgres-auth-server/config.yaml ; then
-  secret_line=$(grep ' secret = ' /opt/multistreamer/config.yaml)
-  session_name_line=$(grep ' session_name = ' /opt/multistreamer/config.yaml)
-  session_secret=$(/opt/openresty-rtmp/bin/lua -e "tmp = { ${secret_line} }; print(tmp.secret)")
-  session_name=$(/opt/openresty-rtmp/bin/lua -e "tmp = { ${session_name_line} }; print(tmp.session_name)")
+  secret_line=$(grep 'secret: ' /etc/multistreamer/config.yaml | sed 's/secret://')
+  session_name_line=$(grep 'session_name: ' /etc/multistreamer/config.yaml | sed 's/session_name://')
+  session_secret=$(/opt/openresty-rtmp/bin/lua -e "tmp = ${secret_line}; print(tmp)")
+  session_name=$(/opt/openresty-rtmp/bin/lua -e "tmp = ${session_name_line}; print(tmp)")
   if ! test -d /etc/postgres-auth-server ; then
     mkdir -p /etc/postgres-auth-server
   fi

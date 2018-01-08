@@ -507,7 +507,7 @@ EOF
 fi
 
 if ! test -e /etc/postgres-auth-server/config.yaml ; then
-  secret_line=$(grep 'secret: ' /etc/multistreamer/config.yaml | sed 's/secret://')
+  secret_line=$(grep 'secret: ' /etc/multistreamer/config.yaml | head -n1 | sed 's/secret://')
   session_name_line=$(grep 'session_name: ' /etc/multistreamer/config.yaml | sed 's/session_name://')
   session_secret=$(/opt/openresty-rtmp/bin/lua -e "tmp = ${secret_line}; print(tmp)")
   session_name=$(/opt/openresty-rtmp/bin/lua -e "tmp = ${session_name_line}; print(tmp)")

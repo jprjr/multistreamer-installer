@@ -195,7 +195,6 @@ popd
 printf "Installing Lua modules for multistreamer...(see $MISC_LOGFILE)\n" | tee -a $MISC_LOGFILE
 pushd /opt/multistreamer
 $LUAROCKS --tree=lua_modules install --only-deps /opt/multistreamer/rockspecs/multistreamer-dev-1.rockspec >> $MISC_LOGFILE 2>&1
-$LUAROCKS --tree=lua_modules install md5 >> $MISC_LOGFILE 2>&1
 popd
 
 cat > /usr/local/bin/postgres-auth-server <<EOF

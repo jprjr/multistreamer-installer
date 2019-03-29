@@ -320,11 +320,11 @@ defaults
 frontend multistreamer-irc-tls
 	bind :::6697 v4v6 ssl crt /etc/dehydrated/certs/$domain/combined.pem
 	mode tcp
-    option tcplog
+	option tcplog
 	default_backend multistreamer-irc
 
 backend multistreamer-irc
-    mode tcp
+	mode tcp
 	server primary 127.0.0.1:6667
 EOF
 

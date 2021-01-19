@@ -1,3 +1,9 @@
+# Archived
+
+Hi all. I don't enjoy working on this anymore. I'm archiving this repo, you're free to fork it.
+
+Stop emailing me directly.
+
 # multistreamer-installer
 
 An install script for installing [Multistreamer](https://github.com/jprjr/multistreamer)
